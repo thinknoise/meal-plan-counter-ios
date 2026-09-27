@@ -14,3 +14,5 @@ The counter supports one-tap meal use, one-step undo, and manual corrections und
 The home screen shows Steve’s Café’s current service period using the phone clock and the café’s Los Angeles time zone. The regular weekly schedule is embedded for offline use and was checked against [Bon Appétit’s CalArts café page](https://calarts.cafebonappetit.com/) on September 26, 2026. Tap **View Hours** for the full schedule or **Today’s Menu** for current hours and food. Special hours, holidays, and academic breaks may differ from the regular schedule.
 
 The original Figma Make web preview is outside this project. It contains a student ID image and student-number field, so it is intentionally excluded from this repository.
+
+For TestFlight and store listing details, see [App Store Connect setup](APP_STORE_CONNECT.md). The app's [privacy policy](PRIVACY.md) is available as a public URL for App Store Connect.
