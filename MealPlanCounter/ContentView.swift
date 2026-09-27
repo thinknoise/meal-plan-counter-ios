@@ -393,9 +393,11 @@ private struct AccountView: View {
                 .padding(.bottom, 24)
                 .overlay(alignment: .bottom) { Palette.cyan.frame(height: 2) }
 
-                Text("Your plan.")
-                    .font(.system(size: 47, weight: .black, design: .rounded))
-                    .tracking(-3)
+                Text("CalArts Meal Plan")
+                    .font(.system(size: 39, weight: .black, design: .rounded))
+                    .tracking(-2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .padding(.top, 24)
 
                 Text("Edit your starting total or correct the number used. Changes stay on this iPhone.")
