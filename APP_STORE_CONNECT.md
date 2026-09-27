@@ -1,15 +1,15 @@
 # App Store Connect setup
 
-## New app record
+## App record
 
 - Platform: iOS
 - Name: Meal Plan Counter
 - Primary language: English (U.S.)
 - Bundle ID: `com.lilyfritsch.mealplancounter`
-- SKU: `meal-plan-counter-ios`
+- SKU: `campc-1`
 - User access: Full Access
 
-Create this record before uploading the first build. Use the Apple developer team with ID `JULFQWJVD6`, which signs the Xcode project. If the bundle ID does not appear in the App Store Connect picker, register it as an explicit App ID in Certificates, Identifiers & Profiles first.
+The app record uses Apple developer team `JULFQWJVD6`, which signs the Xcode project. Version 1.0, build 1 was uploaded on September 26, 2026; App Store Connect processes uploads before they appear in TestFlight.
 
 ## Store information draft
 
