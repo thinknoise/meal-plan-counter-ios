@@ -89,7 +89,7 @@ struct ContentView: View {
 private struct SetupView: View {
     let create: (String, Int) -> Void
 
-    @State private var name = "Lily"
+    @State private var name = "Bob"
     @State private var totalText = "150"
     @State private var showError = false
     @FocusState private var focusedField: Field?
@@ -104,7 +104,7 @@ private struct SetupView: View {
 
                     Eyebrow("MEAL PLAN COUNTER")
                         .padding(.top, 40)
-                    Text("Know your\nnext bite.")
+                    Text("Meal Plan Counter")
                         .font(.system(size: 56, weight: .black, design: .rounded))
                         .tracking(-3)
                         .lineSpacing(-8)
@@ -179,13 +179,17 @@ private struct CounterView: View {
                     BrandHeader()
                     Spacer()
                     Button(action: openAccount) {
-                        Text(String(plan.name.prefix(1)).uppercased())
-                            .font(.system(size: 17, weight: .heavy, design: .rounded))
-                            .frame(width: 42, height: 42)
-                            .overlay(Circle().stroke(Palette.cyan, lineWidth: 2))
+                        Text(plan.name)
+                            .font(.system(size: 14, weight: .heavy, design: .rounded))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.7)
+                            .padding(.horizontal, 12)
+                            .frame(width: min(160, max(55, CGFloat(plan.name.count) * 8 + 24)), height: 55)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.cyan, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open account")
+                    .accessibilityLabel("Open account for \(plan.name)")
                 }
 
                 TimelineView(.periodic(from: .now, by: 30)) { timeline in
@@ -571,10 +575,9 @@ private struct BrandHeader: View {
     var body: some View {
         Image("CalArtsLogo")
             .resizable()
-            .renderingMode(.template)
+            .renderingMode(.original)
             .aspectRatio(contentMode: .fit)
-            .frame(width: 144, height: 24, alignment: .leading)
-            .foregroundStyle(Palette.paper)
+            .frame(width: 144, height: 55, alignment: .leading)
             .accessibilityLabel("CalArts")
     }
 }

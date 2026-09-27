@@ -9,7 +9,7 @@
 - SKU: `campc-1`
 - User access: Full Access
 
-The app record uses Apple developer team `JULFQWJVD6`, which signs the Xcode project. Version 1.0, build 6 was uploaded on September 27, 2026; App Store Connect processes uploads before they appear in TestFlight.
+The app record uses Apple developer team `JULFQWJVD6`, which signs the Xcode project. Version 1.0, build 7 was uploaded on September 27, 2026; App Store Connect processes uploads before they appear in TestFlight.
 
 ## Store information draft
 
