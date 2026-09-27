@@ -183,19 +183,10 @@ private struct CounterView: View {
                     .accessibilityLabel("Open account")
                 }
 
-                Eyebrow("YOUR MEAL PLAN")
-                    .padding(.top, 43)
-                Text("Hi, \(plan.name).")
-                    .font(.system(size: 39, weight: .black, design: .rounded))
-                    .tracking(-2)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.65)
-                    .padding(.top, 7)
-
                 TimelineView(.periodic(from: .now, by: 30)) { timeline in
                     CafeStatusCard(status: CafeHours.status(at: timeline.date))
                 }
-                .padding(.top, 27)
+                .padding(.top, 43)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Eyebrow("MEALS LEFT")
