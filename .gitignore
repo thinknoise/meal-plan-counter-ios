@@ -1,0 +1,14 @@
+.DS_Store
+
+# Xcode-generated files and local user settings
+DerivedData/
+build/
+*.xcuserstate
+*.xcuserdatad/
+*.xcarchive/
+*.ipa
+*.dSYM/
+
+# Swift Package Manager caches
+.build/
+.swiftpm/
