@@ -96,9 +96,9 @@ private struct SetupView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     BrandHeader()
-                    Spacer(minLength: 86)
 
                     Eyebrow("MEAL PLAN COUNTER")
+                        .padding(.top, 40)
                     Text("Know your\nnext bite.")
                         .font(.system(size: 56, weight: .black, design: .rounded))
                         .tracking(-3)
@@ -186,7 +186,7 @@ private struct CounterView: View {
                 TimelineView(.periodic(from: .now, by: 30)) { timeline in
                     CafeStatusCard(status: CafeHours.status(at: timeline.date))
                 }
-                .padding(.top, 43)
+                .padding(.top, 24)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Eyebrow("MEALS LEFT")
@@ -396,7 +396,7 @@ private struct AccountView: View {
                 Text("Your plan.")
                     .font(.system(size: 47, weight: .black, design: .rounded))
                     .tracking(-3)
-                    .padding(.top, 37)
+                    .padding(.top, 24)
 
                 Text("Edit your starting total or correct the number used. Changes stay on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
