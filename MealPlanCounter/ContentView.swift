@@ -10,6 +10,7 @@ private enum Palette {
 
 private enum Screen {
     case count
+    case record
     case account
 }
 
@@ -24,11 +25,14 @@ struct ContentView: View {
             if let plan = store.plan {
                 VStack(spacing: 0) {
                     Group {
-                        if screen == .count {
+                        switch screen {
+                        case .count:
                             CounterView(plan: plan, useMeal: store.useMeal, undoMeal: store.undoLastMeal) {
                                 screen = .account
                             }
-                        } else {
+                        case .record:
+                            RecordView(plan: plan)
+                        case .account:
                             AccountView(store: store) { screen = .count }
                         }
                     }
@@ -50,6 +54,7 @@ struct ContentView: View {
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabButton("COUNT", symbol: "circle.grid.2x2.fill", destination: .count)
+            tabButton("RECORD", symbol: "clock", destination: .record)
             tabButton("ACCOUNT", symbol: "person.crop.circle", destination: .account)
         }
         .padding(.top, 13)
@@ -263,6 +268,94 @@ private struct CounterView: View {
     }
 }
 
+private struct RecordView: View {
+    let plan: MealPlan
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                BrandHeader()
+
+                Text("Meal record")
+                    .font(.system(size: 39, weight: .black, design: .rounded))
+                    .tracking(-2)
+                    .padding(.top, 28)
+
+                Text("A history of your plan balance, saved on this iPhone.")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 10)
+
+                HStack(alignment: .firstTextBaseline) {
+                    Eyebrow("ACTIVITY")
+                    Spacer()
+                    Eyebrow("MEALS LEFT")
+                }
+                .foregroundStyle(Palette.cyan)
+                .padding(.top, 35)
+                .padding(.bottom, 12)
+
+                LazyVStack(spacing: 0) {
+                    ForEach(plan.records.reversed()) { record in
+                        RecordRow(record: record)
+                    }
+                }
+
+                if plan.records.first?.kind == .imported {
+                    Text("This plan was set up before meal records were added. Earlier meal uses have no saved timestamps. The first entry shows the balance when recording began.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 22)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 35)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct RecordRow: View {
+    let record: MealRecord
+
+    private var title: String {
+        switch record.kind {
+        case .started: "Plan started"
+        case .used: "Meal used"
+        case .adjusted: "Plan updated"
+        case .imported: "Record started"
+        }
+    }
+
+    private var dateText: String {
+        record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold))
+                Text(dateText)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Palette.muted)
+            }
+            Spacer(minLength: 4)
+            Text("\(record.remainingMeals)")
+                .font(.system(size: 29, weight: .black, design: .rounded))
+                .foregroundStyle(Palette.lime)
+                .monospacedDigit()
+        }
+        .padding(.vertical, 18)
+        .overlay(alignment: .top) { Palette.cyan.frame(height: 1) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(dateText), \(record.remainingMeals) meals left")
+    }
+}
+
 private struct CafeStatusCard: View {
     let status: CafeStatus
     @State private var showingHours = false
@@ -449,7 +542,7 @@ private struct AccountView: View {
                 store.clear()
             }
         } message: {
-            Text("Your saved count will be removed from this iPhone.")
+            Text("Your saved count and meal record will be removed from this iPhone.")
         }
     }
 

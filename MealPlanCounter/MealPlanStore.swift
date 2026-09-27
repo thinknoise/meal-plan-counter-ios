@@ -12,6 +12,8 @@ final class MealPlanStore: ObservableObject {
         self.defaults = defaults
         if let data = defaults.data(forKey: storageKey) {
             plan = try? JSONDecoder().decode(MealPlan.self, from: data)
+            // Persist the first record created for plans saved by older versions.
+            save()
         }
     }
 
