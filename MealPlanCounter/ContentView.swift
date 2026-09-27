@@ -483,15 +483,13 @@ private struct AccountView: View {
 
 private struct BrandHeader: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("LILY’S")
-                .font(.system(size: 19, weight: .black, design: .rounded))
-                .tracking(-1)
-            Text("MEAL PLAN COUNTER")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                .tracking(1.1)
-        }
-        .accessibilityElement(children: .combine)
+        Image("CalArtsLogo")
+            .resizable()
+            .renderingMode(.template)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 144, height: 24, alignment: .leading)
+            .foregroundStyle(Palette.paper)
+            .accessibilityLabel("CalArts")
     }
 }
 
