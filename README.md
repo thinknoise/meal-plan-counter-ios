@@ -7,9 +7,9 @@ A native SwiftUI version of the meal counter. It works offline and stores the na
 1. Open `Meal Plan Counter.xcodeproj` in Xcode 16 or later.
 2. Select the `Meal Plan Counter` scheme and your iPhone as the run destination. Running on an iPad or Simulator does not install the app on your iPhone.
 3. In **Signing & Capabilities**, select your Apple development team if Xcode asks. The bundle identifier is `com.lilyfritsch.mealplancounter`.
-4. Press **Run**. On first launch, enter Lily's name and the meal total from her plan.
+4. Press **Run**. On first launch, enter a name and choose the CalArts meal plan.
 
-The counter supports one-tap meal use, one-step undo, and manual corrections under **Account**. The **Record** tab shows the starting balance and each meal use with its timestamp and remaining balance. Undo removes the latest meal use from the record. Manual count corrections appear as plan updates. Plans created before the Record tab retain their balance and start the record with a snapshot. **Clear plan** removes its saved data from the iPhone.
+The counter supports one-tap meal use and one-step undo. In **Settings**, choose 5, 10, 14, or 17 meals per week with Flex, or the 140 Block Plan. Weekly plans run Sunday through Saturday; unused meals expire and the count refills Sunday at local midnight. The block plan counts down through the semester. Changing to a different plan starts its full allowance. The **Record** tab shows meal uses, plan changes, and weekly resets with timestamps and remaining balances. Undo removes the latest meal use from the record. Selecting a CalArts plan for the first time replaces an older custom count and its record. **Clear plan** removes all saved data from the iPhone.
 
 The home screen shows Steve’s Café’s current service period using the phone clock and the café’s Los Angeles time zone. The regular weekly schedule is embedded for offline use and was checked against [Bon Appétit’s CalArts café page](https://calarts.cafebonappetit.com/) on September 26, 2026. Tap **View Hours** for the full schedule or **Today’s Menu** for current hours and food. Special hours, holidays, and academic breaks may differ from the regular schedule.
 

@@ -1,11 +1,54 @@
 import Foundation
 
+enum MealPlanType: String, Codable, CaseIterable, Identifiable {
+    case weekly5
+    case weekly10
+    case weekly14
+    case weekly17
+    case block140
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .weekly5: "5 meals/week + Flex"
+        case .weekly10: "10 meals/week + Flex"
+        case .weekly14: "14 meals/week + Flex"
+        case .weekly17: "17 meals/week + Flex"
+        case .block140: "140 Block Plan"
+        }
+    }
+
+    var totalMeals: Int {
+        switch self {
+        case .weekly5: 5
+        case .weekly10: 10
+        case .weekly14: 14
+        case .weekly17: 17
+        case .block140: 140
+        }
+    }
+
+    var isWeekly: Bool { self != .block140 }
+
+    init?(weeklyMeals: Int) {
+        switch weeklyMeals {
+        case 5: self = .weekly5
+        case 10: self = .weekly10
+        case 14: self = .weekly14
+        case 17: self = .weekly17
+        default: return nil
+        }
+    }
+}
+
 struct MealRecord: Codable, Equatable, Identifiable {
     enum Kind: String, Codable {
         case started
         case used
         case adjusted
         case imported
+        case reset
     }
 
     let id: UUID
@@ -23,28 +66,50 @@ struct MealRecord: Codable, Equatable, Identifiable {
 
 struct MealPlan: Codable, Equatable {
     var name: String
-    var totalMeals: Int
-    var usedMeals: Int
+    var planType: MealPlanType?
+    var legacyTotalMeals: Int
+    var legacyUsedMeals: Int
+    var blockUsedMeals: Int
+    var weeklyUsedMeals: Int
+    var weeklyResetAnchor: Date
     var canUndoLastMeal: Bool
     var records: [MealRecord]
 
-    init(name: String, totalMeals: Int, usedMeals: Int = 0, recordedAt: Date = .now) {
-        let total = max(1, totalMeals)
-        let used = min(max(0, usedMeals), total)
+    init(name: String, planType: MealPlanType, recordedAt: Date = .now) {
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.totalMeals = total
-        self.usedMeals = used
+        self.planType = planType
+        legacyTotalMeals = planType.totalMeals
+        legacyUsedMeals = 0
+        blockUsedMeals = 0
+        weeklyUsedMeals = 0
+        weeklyResetAnchor = recordedAt
         canUndoLastMeal = false
-        records = [MealRecord(kind: .started, remainingMeals: total - used, at: recordedAt)]
+        records = [MealRecord(kind: .started, remainingMeals: planType.totalMeals, at: recordedAt)]
+    }
+
+    var totalMeals: Int { planType?.totalMeals ?? legacyTotalMeals }
+
+    var usedMeals: Int {
+        guard let planType else { return legacyUsedMeals }
+        return planType.isWeekly ? weeklyUsedMeals : blockUsedMeals
     }
 
     var remainingMeals: Int { totalMeals - usedMeals }
     var fractionUsed: Double { Double(usedMeals) / Double(totalMeals) }
 
     @discardableResult
-    mutating func useMeal(at timestamp: Date = .now) -> Bool {
+    mutating func useMeal(at timestamp: Date = .now, calendar: Calendar = .current) -> Bool {
+        resetWeeklyIfNeeded(at: timestamp, calendar: calendar)
         guard remainingMeals > 0 else { return false }
-        usedMeals += 1
+        if let planType {
+            if planType.isWeekly {
+                weeklyUsedMeals += 1
+            } else {
+                blockUsedMeals += 1
+            }
+        } else {
+            legacyUsedMeals += 1
+        }
         records.append(MealRecord(kind: .used, remainingMeals: remainingMeals, at: timestamp))
         canUndoLastMeal = true
         return true
@@ -53,36 +118,86 @@ struct MealPlan: Codable, Equatable {
     @discardableResult
     mutating func undoLastMeal() -> Bool {
         guard canUndoLastMeal, usedMeals > 0, records.last?.kind == .used else { return false }
-        usedMeals -= 1
+        if let planType {
+            if planType.isWeekly {
+                weeklyUsedMeals -= 1
+            } else {
+                blockUsedMeals -= 1
+            }
+        } else {
+            legacyUsedMeals -= 1
+        }
         records.removeLast()
         canUndoLastMeal = false
         return true
     }
 
-    mutating func update(name: String, totalMeals: Int, usedMeals: Int, at timestamp: Date = .now) {
-        let previousTotal = self.totalMeals
-        let previousUsed = self.usedMeals
+    @discardableResult
+    mutating func resetWeeklyIfNeeded(at timestamp: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard planType?.isWeekly == true else { return false }
+        let today = calendar.startOfDay(for: timestamp)
+        let daysSinceSunday = calendar.component(.weekday, from: timestamp) - 1
+        guard let sunday = calendar.date(byAdding: .day, value: -daysSinceSunday, to: today),
+              sunday > weeklyResetAnchor else { return false }
+
+        weeklyUsedMeals = 0
+        weeklyResetAnchor = sunday
+        canUndoLastMeal = false
+        records.append(MealRecord(kind: .reset, remainingMeals: remainingMeals, at: sunday))
+        return true
+    }
+
+    mutating func updateSettings(name: String, planType newType: MealPlanType, at timestamp: Date = .now) {
+        let oldType = planType
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.totalMeals = max(1, totalMeals)
-        self.usedMeals = min(max(0, usedMeals), self.totalMeals)
-        if self.totalMeals != previousTotal || self.usedMeals != previousUsed {
-            records.append(MealRecord(kind: .adjusted, remainingMeals: remainingMeals, at: timestamp))
+
+        guard oldType != newType else { return }
+        planType = newType
+        if newType.isWeekly {
+            weeklyUsedMeals = 0
+            weeklyResetAnchor = timestamp
+        } else {
+            blockUsedMeals = 0
         }
         canUndoLastMeal = false
+
+        if oldType == nil {
+            // The first official plan replaces an old custom count and its sample history.
+            records = [MealRecord(kind: .started, remainingMeals: remainingMeals, at: timestamp)]
+        } else {
+            records.append(MealRecord(kind: .adjusted, remainingMeals: remainingMeals, at: timestamp))
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
         case name, totalMeals, usedMeals, canUndoLastMeal, records
+        case planType, legacyTotalMeals, legacyUsedMeals, blockUsedMeals
+        case weeklyUsedMeals, weeklyResetAnchor
+        case mode, semesterTotalMeals, semesterUsedMeals, weeklyMealsPerWeek
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        let total = max(1, try values.decode(Int.self, forKey: .totalMeals))
-        let used = min(max(0, try values.decode(Int.self, forKey: .usedMeals)), total)
+        let oldTotal = max(1, try values.decodeIfPresent(Int.self, forKey: .totalMeals) ?? 1)
+        let oldUsed = min(max(0, try values.decodeIfPresent(Int.self, forKey: .usedMeals) ?? 0), oldTotal)
+        let oldMode = try values.decodeIfPresent(String.self, forKey: .mode)
+        let previousWeeklyMeals = try values.decodeIfPresent(Int.self, forKey: .weeklyMealsPerWeek)
+        let migratedType = oldMode == "weekly" ? previousWeeklyMeals.flatMap(MealPlanType.init(weeklyMeals:)) : nil
+        let unmatchedWeeklyPlan = oldMode == "weekly" && migratedType == nil
+
         name = try values.decode(String.self, forKey: .name)
-        totalMeals = total
-        usedMeals = used
+        planType = try values.decodeIfPresent(MealPlanType.self, forKey: .planType) ?? migratedType
+        legacyTotalMeals = max(1, try values.decodeIfPresent(Int.self, forKey: .legacyTotalMeals)
+            ?? (unmatchedWeeklyPlan ? oldTotal : values.decodeIfPresent(Int.self, forKey: .semesterTotalMeals) ?? oldTotal))
+        legacyUsedMeals = min(max(0, try values.decodeIfPresent(Int.self, forKey: .legacyUsedMeals)
+            ?? (unmatchedWeeklyPlan ? oldUsed : values.decodeIfPresent(Int.self, forKey: .semesterUsedMeals) ?? oldUsed)), legacyTotalMeals)
+        blockUsedMeals = min(max(0, try values.decodeIfPresent(Int.self, forKey: .blockUsedMeals) ?? 0), 140)
+        let weeklyLimit = planType?.isWeekly == true ? (planType?.totalMeals ?? 17) : 17
+        weeklyUsedMeals = min(max(0, try values.decodeIfPresent(Int.self, forKey: .weeklyUsedMeals)
+            ?? (planType?.isWeekly == true ? oldUsed : 0)), weeklyLimit)
+        weeklyResetAnchor = try values.decodeIfPresent(Date.self, forKey: .weeklyResetAnchor) ?? .now
         canUndoLastMeal = false
+        records = []
 
         if let savedRecords = try values.decodeIfPresent([MealRecord].self, forKey: .records),
            !savedRecords.isEmpty {
@@ -90,8 +205,8 @@ struct MealPlan: Codable, Equatable {
             let savedUndo = try values.decodeIfPresent(Bool.self, forKey: .canUndoLastMeal) ?? false
             canUndoLastMeal = savedUndo && usedMeals > 0 && records.last?.kind == .used
         } else {
-            // Older app versions saved the balance but no dates of meal use.
-            records = [MealRecord(kind: .imported, remainingMeals: total - used, at: .now)]
+            // Older versions saved the balance but no dates of meal use.
+            records = [MealRecord(kind: .imported, remainingMeals: remainingMeals, at: .now)]
         }
     }
 
@@ -102,5 +217,11 @@ struct MealPlan: Codable, Equatable {
         try values.encode(usedMeals, forKey: .usedMeals)
         try values.encode(canUndoLastMeal, forKey: .canUndoLastMeal)
         try values.encode(records, forKey: .records)
+        try values.encodeIfPresent(planType, forKey: .planType)
+        try values.encode(legacyTotalMeals, forKey: .legacyTotalMeals)
+        try values.encode(legacyUsedMeals, forKey: .legacyUsedMeals)
+        try values.encode(blockUsedMeals, forKey: .blockUsedMeals)
+        try values.encode(weeklyUsedMeals, forKey: .weeklyUsedMeals)
+        try values.encode(weeklyResetAnchor, forKey: .weeklyResetAnchor)
     }
 }

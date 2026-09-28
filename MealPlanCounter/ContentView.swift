@@ -1,4 +1,6 @@
 import SwiftUI
+import Combine
+import UIKit
 
 private enum Palette {
     static let indigo = Color(red: 13 / 255, green: 7 / 255, blue: 140 / 255)
@@ -11,7 +13,7 @@ private enum Palette {
 private enum Screen {
     case count
     case record
-    case account
+    case settings
 }
 
 struct ContentView: View {
@@ -28,12 +30,12 @@ struct ContentView: View {
                         switch screen {
                         case .count:
                             CounterView(plan: plan, useMeal: store.useMeal, undoMeal: store.undoLastMeal) {
-                                screen = .account
+                                screen = .settings
                             }
                         case .record:
                             RecordView(plan: plan)
-                        case .account:
-                            AccountView(store: store) { screen = .count }
+                        case .settings:
+                            SettingsView(store: store) { screen = .count }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,21 +43,34 @@ struct ContentView: View {
                     bottomBar
                 }
             } else {
-                SetupView { name, total in
-                    store.create(name: name, totalMeals: total)
+                SetupView { name, planType in
+                    store.create(name: name, planType: planType)
                     screen = .count
                 }
             }
         }
         .foregroundStyle(Palette.paper)
         .tint(Palette.cyan)
+        .onAppear {
+            store.refreshWeeklyReset()
+            if store.plan?.planType == nil && store.plan != nil { screen = .settings }
+        }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { date in
+            store.refreshWeeklyReset(at: date)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            store.refreshWeeklyReset()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            store.refreshWeeklyReset()
+        }
     }
 
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabButton("COUNT", symbol: "circle.grid.2x2.fill", destination: .count)
             tabButton("RECORD", symbol: "clock", destination: .record)
-            tabButton("ACCOUNT", symbol: "person.crop.circle", destination: .account)
+            tabButton("SETTINGS", symbol: "gearshape", destination: .settings)
         }
         .padding(.top, 13)
         .padding(.bottom, 7)
@@ -87,14 +102,14 @@ struct ContentView: View {
 }
 
 private struct SetupView: View {
-    let create: (String, Int) -> Void
+    let create: (String, MealPlanType) -> Void
 
     @State private var name = "Bob"
-    @State private var totalText = "150"
+    @State private var selectedPlan: MealPlanType?
     @State private var showError = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case name, total }
+    private enum Field { case name }
 
     var body: some View {
         GeometryReader { geometry in
@@ -118,19 +133,22 @@ private struct SetupView: View {
                         .padding(.top, 23)
                         .padding(.bottom, 44)
 
-                    LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Lily")
+                    LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
                         .focused($focusedField, equals: .name)
                         .textContentType(.givenName)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .total }
+                        .submitLabel(.done)
+                        .onSubmit { focusedField = nil }
 
-                    LabeledInput(label: "MEALS IN YOUR PLAN", text: $totalText, placeholder: "150")
-                        .keyboardType(.numberPad)
-                        .focused($focusedField, equals: .total)
+                    PlanPicker(selection: $selectedPlan)
                         .padding(.top, 20)
 
+                    Text("Weekly plans refill on Sunday at local midnight. The 140 Block Plan counts down during the semester.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.top, 13)
+
                     if showError {
-                        Text("Enter a name and a meal total greater than zero.")
+                        Text("Enter a name and choose a meal plan.")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(Palette.lime)
                             .padding(.top, 12)
@@ -138,12 +156,12 @@ private struct SetupView: View {
 
                     ActionButton(title: "Start counting", symbol: "arrow.right") {
                         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmed.isEmpty, let total = Int(totalText), total > 0 else {
+                        guard !trimmed.isEmpty, let selectedPlan else {
                             showError = true
                             return
                         }
                         focusedField = nil
-                        create(trimmed, total)
+                        create(trimmed, selectedPlan)
                     }
                     .padding(.top, 25)
 
@@ -170,7 +188,7 @@ private struct CounterView: View {
     let plan: MealPlan
     let useMeal: () -> Void
     let undoMeal: () -> Void
-    let openAccount: () -> Void
+    let openSettings: () -> Void
 
     var body: some View {
         ScrollView {
@@ -178,7 +196,7 @@ private struct CounterView: View {
                 HStack {
                     BrandHeader()
                     Spacer()
-                    Button(action: openAccount) {
+                    Button(action: openSettings) {
                         Text(plan.name)
                             .font(.system(size: 14, weight: .heavy, design: .rounded))
                             .multilineTextAlignment(.center)
@@ -189,7 +207,7 @@ private struct CounterView: View {
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.cyan, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open account for \(plan.name)")
+                    .accessibilityLabel("Open settings for \(plan.name)")
                 }
 
                 TimelineView(.periodic(from: .now, by: 30)) { timeline in
@@ -208,7 +226,9 @@ private struct CounterView: View {
                         .padding(.top, 2)
 
                     HStack(alignment: .bottom) {
-                        Eyebrow("STARTED WITH: \(plan.totalMeals) MEALS")
+                        Eyebrow(plan.planType?.isWeekly == true
+                            ? "THIS WEEK: \(plan.totalMeals) MEALS"
+                            : "STARTED WITH: \(plan.totalMeals) MEALS")
                         Spacer()
                         Text("\(plan.usedMeals) USED")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -331,6 +351,7 @@ private struct RecordRow: View {
         case .used: "Meal used"
         case .adjusted: "Plan updated"
         case .imported: "Record started"
+        case .reset: "Week reset"
         }
     }
 
@@ -465,13 +486,12 @@ private struct CafeHoursSheet: View {
     }
 }
 
-private struct AccountView: View {
+private struct SettingsView: View {
     @ObservedObject var store: MealPlanStore
     let goBack: () -> Void
 
     @State private var name = ""
-    @State private var totalText = ""
-    @State private var usedText = ""
+    @State private var selectedPlan: MealPlanType?
     @State private var errorMessage = ""
     @State private var showingClearConfirmation = false
 
@@ -490,28 +510,30 @@ private struct AccountView: View {
                 .padding(.bottom, 24)
                 .overlay(alignment: .bottom) { Palette.cyan.frame(height: 2) }
 
-                Text("CalArts Meal Plan")
+                Text("Settings")
                     .font(.system(size: 39, weight: .black, design: .rounded))
                     .tracking(-2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .padding(.top, 24)
 
-                Text("Edit your starting total or correct the number used. Changes stay on this iPhone.")
+                Text("Choose your CalArts plan. Each tap uses one meal, and the count stays on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
                     .lineSpacing(4)
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 13)
                     .padding(.bottom, 33)
 
-                LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Lily")
+                LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
                     .textContentType(.givenName)
-                LabeledInput(label: "TOTAL MEALS IN PLAN", text: $totalText, placeholder: "150")
-                    .keyboardType(.numberPad)
-                    .padding(.top, 22)
-                LabeledInput(label: "MEALS USED", text: $usedText, placeholder: "0")
-                    .keyboardType(.numberPad)
-                    .padding(.top, 22)
+
+                PlanPicker(selection: $selectedPlan)
+                    .padding(.top, 25)
+
+                Text(planExplanation)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 13)
 
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
@@ -520,9 +542,7 @@ private struct AccountView: View {
                         .padding(.top, 14)
                 }
 
-                ActionButton(title: "Save changes", symbol: "checkmark") {
-                    save()
-                }
+                ActionButton(title: "Save changes", symbol: "checkmark", action: save)
                 .padding(.top, 31)
 
                 Button("CLEAR PLAN FROM THIS IPHONE", role: .destructive) {
@@ -553,20 +573,29 @@ private struct AccountView: View {
     private func loadFields() {
         guard let plan = store.plan else { return }
         name = plan.name
-        totalText = String(plan.totalMeals)
-        usedText = String(plan.usedMeals)
+        selectedPlan = plan.planType
         errorMessage = ""
+    }
+
+    private var planExplanation: String {
+        guard let selectedPlan else {
+            return "Choose a plan to replace the old custom count and start at its full allowance."
+        }
+        let resetNote = selectedPlan.isWeekly
+            ? "Weekly meals run Sunday through Saturday. Unused meals expire, and the count refills Sunday at local midnight."
+            : "The 140 meals count down through the semester."
+        return selectedPlan == store.plan?.planType
+            ? resetNote
+            : resetNote + " Changing plans starts a new count at the full allowance."
     }
 
     private func save() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let total = Int(totalText), total > 0,
-              let used = Int(usedText), used >= 0, used <= total else {
-            errorMessage = "Enter a name, a total above zero, and used meals between zero and the total."
+        guard !trimmed.isEmpty, let selectedPlan else {
+            errorMessage = "Enter a name and choose a meal plan."
             return
         }
-        store.update(name: trimmed, totalMeals: total, usedMeals: used)
+        store.updateSettings(name: trimmed, planType: selectedPlan)
         goBack()
     }
 }
@@ -591,6 +620,30 @@ private struct Eyebrow: View {
         Text(title)
             .font(.system(size: 10, weight: .bold, design: .monospaced))
             .tracking(1.1)
+    }
+}
+
+private struct PlanPicker: View {
+    @Binding var selection: MealPlanType?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow("CALARTS MEAL PLAN")
+            Picker("CalArts Meal Plan", selection: $selection) {
+                if selection == nil {
+                    Text("Choose a plan").tag(nil as MealPlanType?)
+                }
+                ForEach(MealPlanType.allCases) { plan in
+                    Text(plan.title).tag(Optional(plan))
+                }
+            }
+            .pickerStyle(.menu)
+            .font(.system(size: 16, weight: .semibold))
+            .tint(Palette.paper)
+            .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
+            .padding(.horizontal, 16)
+            .overlay(Rectangle().stroke(Palette.cyan, lineWidth: 2))
+        }
     }
 }
 
