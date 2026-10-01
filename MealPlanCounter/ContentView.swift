@@ -938,6 +938,7 @@ private struct MealDatePickerSheet: View {
 }
 
 private struct CafeStatusCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let status: CafeStatus
     @State private var showingHours = false
 
@@ -978,10 +979,39 @@ private struct CafeStatusCard: View {
         .foregroundStyle(Palette.indigo)
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(status.isOpen ? Palette.lime : Palette.cyan)
+        .background {
+            if status.isOpen {
+                if reduceMotion { Palette.lime }
+                else { MovingCafeBanner() }
+            } else {
+                Palette.cyan
+            }
+        }
         .sheet(isPresented: $showingHours) { CafeHoursSheet() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Steve's Café, \(status.headline), \(status.detail). Based on regular hours; holidays may differ.")
+    }
+}
+
+private struct MovingCafeBanner: View {
+    @State private var sweepRight = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            Palette.lime
+                .overlay {
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.12), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: geometry.size.width * 0.65)
+                    .offset(x: sweepRight ? geometry.size.width * 0.85 : -geometry.size.width * 0.85)
+                    .animation(.linear(duration: 10).repeatForever(autoreverses: false), value: sweepRight)
+                }
+                .clipped()
+        }
+        .onAppear { sweepRight = true }
     }
 }
 
