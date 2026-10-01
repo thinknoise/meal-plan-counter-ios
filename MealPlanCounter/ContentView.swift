@@ -34,7 +34,7 @@ struct ContentView: View {
                             }
                         case .record:
                             RecordView(plan: plan, addMeal: store.addPastMeal,
-                                       updateMealType: store.updateMealType)
+                                       editMeal: store.editMeal, removeMeal: store.removeMeal)
                         case .settings:
                             SettingsView(store: store) { screen = .count }
                         }
@@ -308,7 +308,8 @@ private struct CounterView: View {
 private struct RecordView: View {
     let plan: MealPlan
     let addMeal: (MealType, Date) -> Bool
-    let updateMealType: (UUID, MealType) -> Void
+    let editMeal: (UUID, MealType, Date) -> Bool
+    let removeMeal: (UUID) -> Bool
 
     @State private var showingAddMeal = false
     @State private var editingRecord: MealRecord?
@@ -384,7 +385,7 @@ private struct RecordView: View {
                                 RecordRow(record: record)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityHint("Edit meal type")
+                            .accessibilityHint("Edit or remove meal")
                         } else {
                             RecordRow(record: record)
                         }
@@ -409,7 +410,9 @@ private struct RecordView: View {
             AddMealSheet(earliestDate: plan.currentPlanStart, addMeal: addMeal)
         }
         .sheet(item: $editingRecord) { record in
-            EditMealSheet(record: record, updateMealType: updateMealType)
+            EditMealSheet(record: record,
+                          editableDates: plan.editableDateRange(for: record.id) ?? record.timestamp...record.timestamp,
+                          editMeal: editMeal, removeMeal: removeMeal)
         }
     }
 }
@@ -646,9 +649,42 @@ private struct AddMealSheet: View {
 private struct EditMealSheet: View {
     @Environment(\.dismiss) private var dismiss
     let record: MealRecord
-    let updateMealType: (UUID, MealType) -> Void
+    let editableDates: ClosedRange<Date>
+    let editMeal: (UUID, MealType, Date) -> Bool
+    let removeMeal: (UUID) -> Bool
 
     @State private var mealType: MealType = .lunch
+    @State private var mealDate = Date()
+    @State private var errorMessage = ""
+    @State private var showingDatePicker = false
+    @State private var showingRemoveConfirmation = false
+
+    private var dateRange: ClosedRange<Date> {
+        Calendar.current.startOfDay(for: editableDates.lowerBound)...editableDates.upperBound
+    }
+
+    private var dateText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter.string(from: mealDate)
+    }
+
+    private var usesClosingTime: Bool {
+        !Calendar.current.isDate(mealDate, inSameDayAs: record.timestamp) ||
+            (record.recordedAt != nil && record.tappedAt == nil && mealType != record.mealType)
+    }
+
+    private var closingTimeText: String? {
+        guard usesClosingTime,
+              let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: closingDate)
+    }
 
     var body: some View {
         ScrollView {
@@ -661,7 +697,7 @@ private struct EditMealSheet: View {
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                 }
 
-                Text(record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute()))
+                Text("Change the meal type or date, or remove this meal from your record.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 13)
@@ -677,18 +713,120 @@ private struct EditMealSheet: View {
                 .pickerStyle(.segmented)
                 .padding(.top, 10)
 
-                ActionButton(title: "Save meal type", symbol: "checkmark") {
-                    updateMealType(record.id, mealType)
-                    dismiss()
+                Eyebrow("DATE")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 27)
+                Button { showingDatePicker = true } label: {
+                    HStack {
+                        Text(dateText)
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "calendar")
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 55)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
                 }
-                .padding(.top, 30)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Meal date, \(dateText)")
+                .padding(.top, 10)
+
+                if let closingTimeText {
+                    Text("The changed meal will use the café’s regular \(closingTimeText) closing time. Holidays may differ.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.top, 11)
+                }
+
+                if !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.lime)
+                        .padding(.top, 17)
+                }
+
+                ActionButton(title: "Save meal", symbol: "checkmark", action: save)
+                    .padding(.top, 30)
+
+                Button("REMOVE MEAL", role: .destructive) {
+                    showingRemoveConfirmation = true
+                }
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .underline()
+                .foregroundStyle(Palette.paper)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 28)
             }
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
         .background(Palette.indigo)
-        .presentationDetents([.medium])
-        .onAppear { mealType = record.mealType ?? MealType.inferred(at: record.timestamp) }
+        .presentationDetents([.large])
+        .onAppear {
+            mealType = record.mealType ?? MealType.inferred(at: record.timestamp)
+            mealDate = record.timestamp
+        }
+        .sheet(isPresented: $showingDatePicker) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Choose Date")
+                            .font(.system(size: 32, weight: .black, design: .rounded))
+                        Spacer()
+                        Button("DONE") { showingDatePicker = false }
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
+
+                    DatePicker("Meal date", selection: $mealDate,
+                               in: dateRange, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .colorScheme(.dark)
+                        .padding(.top, 19)
+                }
+                .padding(24)
+            }
+            .foregroundStyle(Palette.paper)
+            .background(Palette.indigo)
+            .presentationDetents([.medium, .large])
+        }
+        .confirmationDialog("Remove this meal?", isPresented: $showingRemoveConfirmation) {
+            Button("Remove meal", role: .destructive) {
+                if removeMeal(record.id) {
+                    dismiss()
+                } else {
+                    errorMessage = "This meal could not be removed."
+                }
+            }
+        } message: {
+            Text("The meal will be deleted and its affected balance updated.")
+        }
+    }
+
+    private func save() {
+        let timestamp: Date
+        if usesClosingTime {
+            guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else {
+                errorMessage = "There is no closing time for this meal."
+                return
+            }
+            guard editableDates.contains(closingDate) else {
+                errorMessage = "Choose a meal date within this plan period."
+                return
+            }
+            guard closingDate <= .now else {
+                errorMessage = "Save this meal after its café closing time."
+                return
+            }
+            timestamp = closingDate
+        } else {
+            timestamp = record.timestamp
+        }
+        if editMeal(record.id, mealType, timestamp) {
+            dismiss()
+        } else {
+            errorMessage = "That week or block has no available meals for this date."
+        }
     }
 }
 

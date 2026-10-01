@@ -39,10 +39,22 @@ final class MealPlanStore: ObservableObject {
         return true
     }
 
-    func updateMealType(for recordID: UUID, to mealType: MealType) {
-        guard var current = plan, current.updateMealType(for: recordID, to: mealType) else { return }
+    @discardableResult
+    func editMeal(recordID: UUID, type: MealType, at timestamp: Date) -> Bool {
+        refreshWeeklyReset()
+        guard var current = plan, current.editMeal(recordID: recordID, type: type, at: timestamp) else { return false }
         plan = current
         save()
+        return true
+    }
+
+    @discardableResult
+    func removeMeal(recordID: UUID) -> Bool {
+        refreshWeeklyReset()
+        guard var current = plan, current.removeMeal(recordID: recordID) else { return false }
+        plan = current
+        save()
+        return true
     }
 
     func undoLastMeal() {
