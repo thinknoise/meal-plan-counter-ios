@@ -810,24 +810,14 @@ private struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Button(action: goBack) {
-                        Label("BACK", systemImage: "arrow.left")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    BrandHeader()
-                }
-                .padding(.bottom, 24)
-                .overlay(alignment: .bottom) { Palette.cyan.frame(height: 2) }
+                BrandHeader()
 
                 Text("Settings")
                     .font(.system(size: 39, weight: .black, design: .rounded))
                     .tracking(-2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                    .padding(.top, 24)
+                    .padding(.top, 28)
 
                 Text("Choose your CalArts plan. Each tap uses one meal, and the count stays on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
@@ -871,7 +861,7 @@ private struct SettingsView: View {
                 .padding(.top, 48)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 17)
+            .padding(.top, 16)
             .padding(.bottom, 35)
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
