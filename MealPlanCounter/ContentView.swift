@@ -407,11 +407,13 @@ private struct RecordView: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showingAddMeal) {
-            AddMealSheet(earliestDate: plan.currentPlanStart, addMeal: addMeal)
+            AddMealSheet(earliestDate: plan.currentPlanStart,
+                         isWeekly: plan.planType?.isWeekly == true, addMeal: addMeal)
         }
         .sheet(item: $editingRecord) { record in
             EditMealSheet(record: record,
                           editableDates: plan.editableDateRange(for: record.id) ?? record.timestamp...record.timestamp,
+                          isWeekly: plan.isWeeklyPeriod(for: record.id),
                           editMeal: editMeal, removeMeal: removeMeal)
         }
     }
@@ -501,6 +503,7 @@ private struct RecordRow: View {
 private struct AddMealSheet: View {
     @Environment(\.dismiss) private var dismiss
     let earliestDate: Date
+    let isWeekly: Bool
     let addMeal: (MealType, Date) -> Bool
 
     @State private var mealType = MealType.inferred(at: .now)
@@ -621,27 +624,8 @@ private struct AddMealSheet: View {
         .background(Palette.indigo)
         .presentationDetents([.medium, .large])
         .sheet(isPresented: $showingDatePicker) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Choose Date")
-                            .font(.system(size: 32, weight: .black, design: .rounded))
-                        Spacer()
-                        Button("DONE") { showingDatePicker = false }
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    }
-
-                    DatePicker("Meal date", selection: $mealDate,
-                               in: dateRange, displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                        .colorScheme(.dark)
-                        .padding(.top, 19)
-                }
-                .padding(24)
-            }
-            .foregroundStyle(Palette.paper)
-            .background(Palette.indigo)
-            .presentationDetents([.medium, .large])
+            MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
+                                isWeekly: isWeekly)
         }
     }
 }
@@ -650,6 +634,7 @@ private struct EditMealSheet: View {
     @Environment(\.dismiss) private var dismiss
     let record: MealRecord
     let editableDates: ClosedRange<Date>
+    let isWeekly: Bool
     let editMeal: (UUID, MealType, Date) -> Bool
     let removeMeal: (UUID) -> Bool
 
@@ -768,27 +753,8 @@ private struct EditMealSheet: View {
             mealDate = record.timestamp
         }
         .sheet(isPresented: $showingDatePicker) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Choose Date")
-                            .font(.system(size: 32, weight: .black, design: .rounded))
-                        Spacer()
-                        Button("DONE") { showingDatePicker = false }
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    }
-
-                    DatePicker("Meal date", selection: $mealDate,
-                               in: dateRange, displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                        .colorScheme(.dark)
-                        .padding(.top, 19)
-                }
-                .padding(24)
-            }
-            .foregroundStyle(Palette.paper)
-            .background(Palette.indigo)
-            .presentationDetents([.medium, .large])
+            MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
+                                isWeekly: isWeekly)
         }
         .confirmationDialog("Remove this meal?", isPresented: $showingRemoveConfirmation) {
             Button("Remove meal", role: .destructive) {
@@ -827,6 +793,144 @@ private struct EditMealSheet: View {
         } else {
             errorMessage = "That week or block has no available meals for this date."
         }
+    }
+}
+
+private struct MealDatePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selectedDate: Date
+    let allowedDates: ClosedRange<Date>
+    let isWeekly: Bool
+
+    @State private var displayedWeekStart = Date()
+
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        calendar.firstWeekday = 1
+        return calendar
+    }
+
+    private var firstAllowedDay: Date { calendar.startOfDay(for: allowedDates.lowerBound) }
+    private var lastAllowedDay: Date { calendar.startOfDay(for: allowedDates.upperBound) }
+
+    private var canShowPreviousWeek: Bool {
+        calendar.date(byAdding: .day, value: -1, to: displayedWeekStart)! >= firstAllowedDay
+    }
+
+    private var canShowNextWeek: Bool {
+        calendar.date(byAdding: .day, value: 7, to: displayedWeekStart)! <= lastAllowedDay
+    }
+
+    private var weekLabel: String {
+        let saturday = calendar.date(byAdding: .day, value: 6, to: displayedWeekStart)!
+        return "\(Self.format(displayedWeekStart, as: "MMM d")) – \(Self.format(saturday, as: "MMM d, yyyy"))"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Choose Date")
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                    Spacer()
+                    Button("DONE") { dismiss() }
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                }
+
+                if isWeekly {
+                    weeklyPicker
+                        .padding(.top, 24)
+                } else {
+                    DatePicker("Meal date", selection: $selectedDate,
+                               in: allowedDates, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .colorScheme(.dark)
+                        .padding(.top, 19)
+                }
+            }
+            .padding(24)
+        }
+        .foregroundStyle(Palette.paper)
+        .background(Palette.indigo)
+        .presentationDetents([.medium, .large])
+        .onAppear { displayedWeekStart = weekStart(for: selectedDate) }
+    }
+
+    private var weeklyPicker: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Button {
+                    displayedWeekStart = calendar.date(byAdding: .day, value: -7, to: displayedWeekStart)!
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 32, height: 44)
+                }
+                .disabled(!canShowPreviousWeek)
+                .opacity(canShowPreviousWeek ? 1 : 0.35)
+                .accessibilityLabel("Previous week")
+
+                Spacer(minLength: 2)
+                Text(weekLabel)
+                    .font(.system(size: 14, weight: .semibold))
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+
+                Button {
+                    displayedWeekStart = calendar.date(byAdding: .day, value: 7, to: displayedWeekStart)!
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 32, height: 44)
+                }
+                .disabled(!canShowNextWeek)
+                .opacity(canShowNextWeek ? 1 : 0.35)
+                .accessibilityLabel("Next week")
+            }
+
+            HStack(spacing: 4) {
+                ForEach(0..<7, id: \.self) { offset in
+                    let day = calendar.date(byAdding: .day, value: offset, to: displayedWeekStart)!
+                    let selected = calendar.isDate(day, inSameDayAs: selectedDate)
+                    let selectable = day >= firstAllowedDay && day <= lastAllowedDay
+                    Button { selectedDate = day } label: {
+                        VStack(spacing: 6) {
+                            Text(Self.format(day, as: "EEE").uppercased())
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            Text("\(calendar.component(.day, from: day))")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 64)
+                        .foregroundStyle(selected ? Palette.indigo : Palette.paper)
+                        .background {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(selected ? Palette.cyan : Color.clear)
+                        }
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!selectable)
+                    .opacity(selectable ? 1 : 0.35)
+                    .accessibilityLabel(Self.format(day, as: "EEEE, MMMM d, yyyy"))
+                    .accessibilityValue(selected ? "Selected" : "")
+                }
+            }
+        }
+    }
+
+    private func weekStart(for date: Date) -> Date {
+        let day = calendar.startOfDay(for: date)
+        let daysSinceSunday = calendar.component(.weekday, from: day) - 1
+        return calendar.date(byAdding: .day, value: -daysSinceSunday, to: day)!
+    }
+
+    private static func format(_ date: Date, as pattern: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = pattern
+        return formatter.string(from: date)
     }
 }
 

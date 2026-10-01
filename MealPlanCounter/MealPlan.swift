@@ -160,6 +160,12 @@ struct MealPlan: Codable, Equatable {
         return records[start].timestamp...latest
     }
 
+    func isWeeklyPeriod(for recordID: UUID) -> Bool {
+        guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }),
+              let start = epochStartIndex(containing: index) else { return false }
+        return isWeeklyEpoch(start: start, end: epochEndIndex(after: start))
+    }
+
     @discardableResult
     mutating func editMeal(recordID: UUID, type: MealType, at timestamp: Date,
                            now: Date = .now, calendar: Calendar = .current) -> Bool {
