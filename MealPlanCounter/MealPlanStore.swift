@@ -52,11 +52,12 @@ final class MealPlanStore: ObservableObject {
         save()
     }
 
-    func updateSettings(name: String, planType: MealPlanType) {
+    func updateSettings(name: String, planType: MealPlanType, semesterStartDate: Date?) {
         guard var current = plan else { return }
         let now = Date()
         current.resetWeeklyIfNeeded(at: now)
-        current.updateSettings(name: name, planType: planType, at: now)
+        current.updateSettings(name: name, planType: planType,
+                               semesterStartDate: semesterStartDate, at: now)
         plan = current
         save()
     }

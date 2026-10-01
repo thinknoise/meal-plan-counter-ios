@@ -328,10 +328,28 @@ private struct RecordView: View {
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 10)
 
+                if let weekStart = plan.currentWeeklyStart(at: .now) {
+                    Eyebrow("THIS WEEK STARTED")
+                        .foregroundStyle(Palette.cyan)
+                        .padding(.top, 22)
+                    Text(RecordRow.dayDateText(weekStart))
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.top, 6)
+                } else if plan.planType == .block140 {
+                    Eyebrow("SEMESTER START")
+                        .foregroundStyle(Palette.cyan)
+                        .padding(.top, 22)
+                    Text(plan.semesterStartDate.map {
+                        RecordRow.dayDateText($0, timeZone: TimeZone(identifier: "America/Los_Angeles")!)
+                    } ?? "Set the date in Settings")
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.top, 6)
+                }
+
                 if let reset = plan.nextWeeklyReset(after: .now) {
                     Eyebrow("NEXT WEEKLY RESET")
                         .foregroundStyle(Palette.cyan)
-                        .padding(.top, 22)
+                        .padding(.top, 17)
                     Text(RecordRow.resetDateText(reset))
                         .font(.system(size: 14, weight: .semibold))
                         .padding(.top, 6)
@@ -401,7 +419,7 @@ private struct RecordRow: View {
 
     private var title: String {
         switch record.kind {
-        case .started: "Plan started"
+        case .started: "Tracking started"
         case .used: "Meal used"
         case .adjusted: "Plan updated"
         case .imported: "Record started"
@@ -413,6 +431,9 @@ private struct RecordRow: View {
         if record.kind == .used {
             return "\(Self.format(record.timestamp, as: "EEEE")) · \(record.mealType?.rawValue ?? "Unassigned") · \(Self.format(record.timestamp, as: "h:mm a"))"
         }
+        if record.kind == .started {
+            return Self.dayDateText(record.timestamp)
+        }
         return record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
     }
 
@@ -420,10 +441,14 @@ private struct RecordRow: View {
         format(date, as: "EEEE, MMM d, yyyy 'at' h:mm a")
     }
 
-    private static func format(_ date: Date, as pattern: String) -> String {
+    static func dayDateText(_ date: Date, timeZone: TimeZone = .current) -> String {
+        format(date, as: "EEEE, MMM d, yyyy", timeZone: timeZone)
+    }
+
+    private static func format(_ date: Date, as pattern: String, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
+        formatter.timeZone = timeZone
         formatter.dateFormat = pattern
         return formatter.string(from: date)
     }
@@ -764,6 +789,7 @@ private struct SettingsView: View {
 
     @State private var name = ""
     @State private var selectedPlan: MealPlanType?
+    @State private var semesterStartDate: Date?
     @State private var errorMessage = ""
     @State private var showingClearConfirmation = false
 
@@ -801,6 +827,11 @@ private struct SettingsView: View {
 
                 PlanPicker(selection: $selectedPlan)
                     .padding(.top, 25)
+
+                if selectedPlan == .block140 {
+                    SemesterStartInput(date: $semesterStartDate)
+                        .padding(.top, 25)
+                }
 
                 Text(planExplanation)
                     .font(.system(size: 12, weight: .medium))
@@ -846,6 +877,7 @@ private struct SettingsView: View {
         guard let plan = store.plan else { return }
         name = plan.name
         selectedPlan = plan.planType
+        semesterStartDate = plan.semesterStartDate
         errorMessage = ""
     }
 
@@ -867,8 +899,98 @@ private struct SettingsView: View {
             errorMessage = "Enter a name and choose a meal plan."
             return
         }
-        store.updateSettings(name: trimmed, planType: selectedPlan)
+        store.updateSettings(name: trimmed, planType: selectedPlan,
+                             semesterStartDate: selectedPlan == .block140 ? semesterStartDate : nil)
         goBack()
+    }
+}
+
+private struct SemesterStartInput: View {
+    @Binding var date: Date?
+    @State private var pickerDate = Date()
+    @State private var showingPicker = false
+
+    private var localCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
+    private var cafeCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        return calendar
+    }
+
+    private var dateText: String {
+        guard let date else { return "Choose semester start" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = cafeCalendar.timeZone
+        formatter.dateFormat = "EEEE, MMM d, yyyy"
+        return formatter.string(from: date)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow("SEMESTER START")
+            Button(action: openPicker) {
+                HStack {
+                    Text(dateText)
+                        .font(.system(size: 16, weight: .semibold))
+                    Spacer(minLength: 6)
+                    Image(systemName: "calendar")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 55)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+            }
+            .buttonStyle(.plain)
+
+            Text("Shown in Record for the 140 Block Plan. Changing this date does not reset meals.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.muted)
+        }
+        .sheet(isPresented: $showingPicker) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Semester Start")
+                            .font(.system(size: 29, weight: .black, design: .rounded))
+                        Spacer()
+                        Button("DONE", action: savePickerDate)
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
+
+                    DatePicker("Semester start date", selection: $pickerDate,
+                               in: ...Date(), displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .colorScheme(.dark)
+                        .padding(.top, 19)
+                }
+                .padding(24)
+            }
+            .foregroundStyle(Palette.paper)
+            .background(Palette.indigo)
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func openPicker() {
+        if let date {
+            let day = cafeCalendar.dateComponents([.year, .month, .day], from: date)
+            pickerDate = localCalendar.date(from: day) ?? .now
+        } else {
+            pickerDate = .now
+        }
+        showingPicker = true
+    }
+
+    private func savePickerDate() {
+        let day = localCalendar.dateComponents([.year, .month, .day], from: pickerDate)
+        date = cafeCalendar.date(from: day)
+        showingPicker = false
     }
 }
 

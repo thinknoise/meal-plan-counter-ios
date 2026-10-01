@@ -89,6 +89,7 @@ struct MealPlan: Codable, Equatable {
     var blockUsedMeals: Int
     var weeklyUsedMeals: Int
     var weeklyResetAnchor: Date
+    var semesterStartDate: Date?
     var canUndoLastMeal: Bool
     var records: [MealRecord]
 
@@ -100,6 +101,7 @@ struct MealPlan: Codable, Equatable {
         blockUsedMeals = 0
         weeklyUsedMeals = 0
         weeklyResetAnchor = recordedAt
+        semesterStartDate = nil
         canUndoLastMeal = false
         records = [MealRecord(kind: .started, remainingMeals: planType.totalMeals, at: recordedAt)]
     }
@@ -189,6 +191,11 @@ struct MealPlan: Codable, Equatable {
         return calendar.date(byAdding: .day, value: 7, to: weekStart(for: date, calendar: calendar))
     }
 
+    func currentWeeklyStart(at date: Date, calendar: Calendar = .current) -> Date? {
+        guard planType?.isWeekly == true else { return nil }
+        return weekStart(for: date, calendar: calendar)
+    }
+
     func daysUntilWeeklyReset(after date: Date, calendar: Calendar = .current) -> Int? {
         guard let reset = nextWeeklyReset(after: date, calendar: calendar) else { return nil }
         return calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: reset).day
@@ -230,9 +237,11 @@ struct MealPlan: Codable, Equatable {
         return true
     }
 
-    mutating func updateSettings(name: String, planType newType: MealPlanType, at timestamp: Date = .now) {
+    mutating func updateSettings(name: String, planType newType: MealPlanType,
+                                 semesterStartDate newSemesterStart: Date? = nil, at timestamp: Date = .now) {
         let oldType = planType
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        semesterStartDate = newType == .block140 ? newSemesterStart : nil
 
         guard oldType != newType else { return }
         planType = newType
@@ -255,7 +264,7 @@ struct MealPlan: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case name, totalMeals, usedMeals, canUndoLastMeal, records
         case planType, legacyTotalMeals, legacyUsedMeals, blockUsedMeals
-        case weeklyUsedMeals, weeklyResetAnchor
+        case weeklyUsedMeals, weeklyResetAnchor, semesterStartDate
         case mode, semesterTotalMeals, semesterUsedMeals, weeklyMealsPerWeek
     }
 
@@ -279,6 +288,7 @@ struct MealPlan: Codable, Equatable {
         weeklyUsedMeals = min(max(0, try values.decodeIfPresent(Int.self, forKey: .weeklyUsedMeals)
             ?? (planType?.isWeekly == true ? oldUsed : 0)), weeklyLimit)
         weeklyResetAnchor = try values.decodeIfPresent(Date.self, forKey: .weeklyResetAnchor) ?? .now
+        semesterStartDate = try values.decodeIfPresent(Date.self, forKey: .semesterStartDate)
         canUndoLastMeal = false
         records = []
 
@@ -306,5 +316,6 @@ struct MealPlan: Codable, Equatable {
         try values.encode(blockUsedMeals, forKey: .blockUsedMeals)
         try values.encode(weeklyUsedMeals, forKey: .weeklyUsedMeals)
         try values.encode(weeklyResetAnchor, forKey: .weeklyResetAnchor)
+        try values.encodeIfPresent(semesterStartDate, forKey: .semesterStartDate)
     }
 }
