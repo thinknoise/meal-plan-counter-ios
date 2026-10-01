@@ -130,6 +130,10 @@ final class CafeReminder: NSObject, ObservableObject {
             return
         }
 
+        guard locationManager.accuracyAuthorization == .fullAccuracy else {
+            pause("Precise Location is off. Turn it on for CAMPc in iPhone Settings to use this 30-meter reminder.", openSettings: true)
+            return
+        }
         guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else {
             pause("Location reminders are unavailable on this device.")
             return

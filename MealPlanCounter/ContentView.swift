@@ -1150,7 +1150,7 @@ private struct SettingsView: View {
             Button("Not now", role: .cancel) {}
             Button("Continue") { cafeReminder.enable() }
         } message: {
-            Text("Meal Plan Counter can remind you to count your meal when you arrive at Steve's Café. The app does not save or send your location.")
+            Text("Meal Plan Counter can remind you to count your meal when you arrive at Steve's Café. Choose Precise Location for the 30-meter reminder. The app does not save or send your location.")
         }
         .confirmationDialog("Start all over on this iPhone?", isPresented: $showingClearConfirmation) {
             Button("Clear everything and start over", role: .destructive) {
