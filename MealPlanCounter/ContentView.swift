@@ -464,6 +464,28 @@ private struct AddMealSheet: View {
     @State private var mealType = MealType.inferred(at: .now)
     @State private var mealDate = Date()
     @State private var errorMessage = ""
+    @State private var showingDatePicker = false
+
+    private var dateRange: ClosedRange<Date> {
+        Calendar.current.startOfDay(for: earliestDate)...Date()
+    }
+
+    private var dateText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter.string(from: mealDate)
+    }
+
+    private var closingTimeText: String? {
+        guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: closingDate)
+    }
 
     var body: some View {
         ScrollView {
@@ -476,12 +498,12 @@ private struct AddMealSheet: View {
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                 }
 
-                Text("Record a meal you forgot to count. Choose when you ate it.")
+                Text("Record a meal you forgot to count. Choose the meal and date.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 12)
 
-                Eyebrow("MEAL TYPE")
+                Eyebrow("MEAL")
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 28)
                 Picker("Meal type", selection: $mealType) {
@@ -492,19 +514,36 @@ private struct AddMealSheet: View {
                 .pickerStyle(.segmented)
                 .padding(.top, 10)
 
-                Eyebrow("DATE & TIME")
+                Eyebrow("DATE")
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 27)
-                DatePicker("Meal date and time", selection: $mealDate,
-                           in: earliestDate...Date(), displayedComponents: [.date, .hourAndMinute])
-                    .datePickerStyle(.compact)
-                    .font(.system(size: 14, weight: .semibold))
-                    .padding(.top, 10)
+                Button { showingDatePicker = true } label: {
+                    HStack {
+                        Text(dateText)
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "calendar")
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 55)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Meal date, \(dateText)")
+                .padding(.top, 10)
 
-                Text("Choose a date from when this plan began through now.")
+                if let closingTimeText {
+                    Text("Recorded at the café’s regular \(closingTimeText) closing time. Holidays may differ.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.top, 11)
+                }
+
+                Text("Choose a date from when this plan began through today.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, 11)
+                    .padding(.top, 5)
 
                 if !errorMessage.isEmpty {
                     Text(errorMessage)
@@ -514,10 +553,22 @@ private struct AddMealSheet: View {
                 }
 
                 ActionButton(title: "Add meal", symbol: "plus") {
-                    if addMeal(mealType, mealDate) {
+                    guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else {
+                        errorMessage = "There is no closing time for this meal."
+                        return
+                    }
+                    guard closingDate >= earliestDate else {
+                        errorMessage = "This meal closed before the current plan began."
+                        return
+                    }
+                    guard closingDate <= .now else {
+                        errorMessage = "Add this meal after its café closing time."
+                        return
+                    }
+                    if addMeal(mealType, closingDate) {
                         dismiss()
                     } else {
-                        errorMessage = "This meal must be within the current plan and have an available meal in that week or block."
+                        errorMessage = "There are no available meals left for that week or block."
                     }
                 }
                 .padding(.top, 27)
@@ -527,6 +578,29 @@ private struct AddMealSheet: View {
         .foregroundStyle(Palette.paper)
         .background(Palette.indigo)
         .presentationDetents([.medium, .large])
+        .sheet(isPresented: $showingDatePicker) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Choose Date")
+                            .font(.system(size: 32, weight: .black, design: .rounded))
+                        Spacer()
+                        Button("DONE") { showingDatePicker = false }
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
+
+                    DatePicker("Meal date", selection: $mealDate,
+                               in: dateRange, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .colorScheme(.dark)
+                        .padding(.top, 19)
+                }
+                .padding(24)
+            }
+            .foregroundStyle(Palette.paper)
+            .background(Palette.indigo)
+            .presentationDetents([.medium, .large])
+        }
     }
 }
 
