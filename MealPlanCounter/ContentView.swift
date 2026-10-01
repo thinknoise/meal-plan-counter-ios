@@ -18,6 +18,7 @@ private enum Screen {
 
 struct ContentView: View {
     @ObservedObject var store: MealPlanStore
+    @ObservedObject var cafeReminder: CafeReminder
     @State private var screen: Screen = .count
 
     var body: some View {
@@ -36,7 +37,7 @@ struct ContentView: View {
                             RecordView(plan: plan, addMeal: store.addPastMeal,
                                        editMeal: store.editMeal, removeMeal: store.removeMeal)
                         case .settings:
-                            SettingsView(store: store) { screen = .count }
+                            SettingsView(store: store, cafeReminder: cafeReminder) { screen = .count }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -54,6 +55,7 @@ struct ContentView: View {
         .tint(Palette.cyan)
         .onAppear {
             store.refreshWeeklyReset()
+            cafeReminder.refresh()
             if store.plan?.planType == nil && store.plan != nil { screen = .settings }
         }
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { date in
@@ -61,6 +63,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             store.refreshWeeklyReset()
+            cafeReminder.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             store.refreshWeeklyReset()
@@ -1041,6 +1044,7 @@ private struct CafeHoursSheet: View {
 
 private struct SettingsView: View {
     @ObservedObject var store: MealPlanStore
+    @ObservedObject var cafeReminder: CafeReminder
     let goBack: () -> Void
 
     @State private var name = ""
@@ -1048,6 +1052,7 @@ private struct SettingsView: View {
     @State private var semesterStartDate: Date?
     @State private var errorMessage = ""
     @State private var showingClearConfirmation = false
+    @State private var showingReminderExplanation = false
 
     var body: some View {
         ScrollView {
@@ -1094,6 +1099,37 @@ private struct SettingsView: View {
                 ActionButton(title: "Save changes", symbol: "checkmark", action: save)
                 .padding(.top, 31)
 
+                Eyebrow("REMINDERS")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 42)
+
+                Toggle(isOn: Binding(
+                    get: { cafeReminder.isEnabled },
+                    set: { enabled in
+                        if enabled { showingReminderExplanation = true }
+                        else { cafeReminder.disable() }
+                    }
+                )) {
+                    Text("Steve's Café Reminder")
+                        .font(.system(size: 16, weight: .bold))
+                }
+                .tint(Palette.lime)
+                .padding(.top, 13)
+
+                Text(cafeReminder.statusMessage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 8)
+
+                if cafeReminder.needsSystemSettings,
+                   let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                    Link("OPEN IPHONE SETTINGS ↗", destination: settingsURL)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .underline()
+                        .foregroundStyle(Palette.cyan)
+                        .padding(.top, 12)
+                }
+
                 Button("CLEAR EVERYTHING FROM THIS IPHONE", role: .destructive) {
                     showingClearConfirmation = true
                 }
@@ -1110,12 +1146,19 @@ private struct SettingsView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .onAppear(perform: loadFields)
+        .alert("Steve's Café Reminder", isPresented: $showingReminderExplanation) {
+            Button("Not now", role: .cancel) {}
+            Button("Continue") { cafeReminder.enable() }
+        } message: {
+            Text("Meal Plan Counter can remind you to count your meal when you arrive at Steve's Café. The app does not save or send your location.")
+        }
         .confirmationDialog("Start all over on this iPhone?", isPresented: $showingClearConfirmation) {
             Button("Clear everything and start over", role: .destructive) {
+                cafeReminder.clear()
                 store.clear()
             }
         } message: {
-            Text("Your saved plan, meal count, and meal record will be deleted from this iPhone. You'll return to setup.")
+            Text("Your saved plan, meal count, meal record, and café reminder setting will be deleted from this iPhone. You'll return to setup.")
         }
     }
 
