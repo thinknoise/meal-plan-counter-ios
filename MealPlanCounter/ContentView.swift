@@ -438,7 +438,7 @@ private struct RecordRow: View {
 
     private var dateText: String {
         if record.kind == .used {
-            return Self.format(record.timestamp, as: "h:mm a")
+            return Self.format(record.timestamp, as: "MMM d, yyyy '·' h:mm a")
         }
         if record.kind == .started {
             return Self.dayDateText(record.timestamp)

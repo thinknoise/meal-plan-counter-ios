@@ -50,9 +50,19 @@ enum MealType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static func inferred(at date: Date, calendar: Calendar = .current) -> MealType {
-        let hour = calendar.component(.hour, from: date)
-        if hour < 11 { return .breakfast }
-        if hour < 16 { return .lunch }
+        let minute = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        let weekday = calendar.component(.weekday, from: date)
+        let services = CafeHours.mealServices(for: weekday)
+        if let meal = services.first(where: {
+            minute >= $0.service.startMinute && minute < $0.service.endMinute
+        }) {
+            return meal.mealType
+        }
+        // Outside regular service, use the surrounding meal boundaries as a default.
+        if let breakfast = services.first(where: { $0.mealType == .breakfast }),
+           minute < breakfast.service.endMinute { return .breakfast }
+        if let dinner = services.first(where: { $0.mealType == .dinner }),
+           minute < dinner.service.startMinute { return .lunch }
         return .dinner
     }
 }
