@@ -42,6 +42,21 @@ enum MealPlanType: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum MealType: String, Codable, CaseIterable, Identifiable {
+    case breakfast = "Breakfast"
+    case lunch = "Lunch"
+    case dinner = "Dinner"
+
+    var id: String { rawValue }
+
+    static func inferred(at date: Date, calendar: Calendar = .current) -> MealType {
+        let hour = calendar.component(.hour, from: date)
+        if hour < 11 { return .breakfast }
+        if hour < 16 { return .lunch }
+        return .dinner
+    }
+}
+
 struct MealRecord: Codable, Equatable, Identifiable {
     enum Kind: String, Codable {
         case started
@@ -53,14 +68,16 @@ struct MealRecord: Codable, Equatable, Identifiable {
 
     let id: UUID
     let timestamp: Date
-    let remainingMeals: Int
+    var remainingMeals: Int
     let kind: Kind
+    var mealType: MealType?
 
-    init(kind: Kind, remainingMeals: Int, at timestamp: Date) {
+    init(kind: Kind, remainingMeals: Int, at timestamp: Date, mealType: MealType? = nil) {
         id = UUID()
         self.timestamp = timestamp
         self.remainingMeals = remainingMeals
         self.kind = kind
+        self.mealType = mealType
     }
 }
 
@@ -110,9 +127,77 @@ struct MealPlan: Codable, Equatable {
         } else {
             legacyUsedMeals += 1
         }
-        records.append(MealRecord(kind: .used, remainingMeals: remainingMeals, at: timestamp))
+        records.append(MealRecord(kind: .used, remainingMeals: remainingMeals, at: timestamp,
+                                  mealType: MealType.inferred(at: timestamp, calendar: calendar)))
         canUndoLastMeal = true
         return true
+    }
+
+    mutating func updateMealType(for recordID: UUID, to mealType: MealType) -> Bool {
+        guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }) else { return false }
+        records[index].mealType = mealType
+        return true
+    }
+
+    // A backdated meal belongs to the current plan and only changes balances in its own
+    // weekly allowance (or the rest of the semester for the block plan).
+    @discardableResult
+    mutating func addPastMeal(type: MealType, at timestamp: Date, now: Date = .now,
+                              calendar: Calendar = .current) -> Bool {
+        resetWeeklyIfNeeded(at: now, calendar: calendar)
+        guard planType != nil, timestamp <= now, timestamp >= currentPlanStart else { return false }
+
+        let affectedWeek = planType?.isWeekly == true ? weekStart(for: timestamp, calendar: calendar) : nil
+        let currentWeek = planType?.isWeekly == true ? weekStart(for: now, calendar: calendar) : nil
+        let relevantRecords = records.filter { record in
+            record.timestamp >= currentPlanStart &&
+            (affectedWeek == nil || weekStart(for: record.timestamp, calendar: calendar) == affectedWeek)
+        }
+        let lowestBalance = relevantRecords.map(\.remainingMeals).min() ?? totalMeals
+        guard lowestBalance > 0, affectedWeek != currentWeek || remainingMeals > 0 else { return false }
+
+        let balanceBeforeMeal = relevantRecords.last(where: { $0.timestamp <= timestamp })?.remainingMeals ?? totalMeals
+        guard balanceBeforeMeal > 0 else { return false }
+
+        for index in records.indices where records[index].kind == .used &&
+            records[index].timestamp > timestamp && records[index].timestamp >= currentPlanStart &&
+            (affectedWeek == nil || weekStart(for: records[index].timestamp, calendar: calendar) == affectedWeek) {
+            records[index].remainingMeals -= 1
+        }
+
+        let record = MealRecord(kind: .used, remainingMeals: balanceBeforeMeal - 1,
+                                at: timestamp, mealType: type)
+        let insertionIndex = records.firstIndex(where: { $0.timestamp > timestamp }) ?? records.endIndex
+        records.insert(record, at: insertionIndex)
+
+        if planType?.isWeekly == true {
+            if affectedWeek == currentWeek { weeklyUsedMeals += 1 }
+        } else {
+            blockUsedMeals += 1
+        }
+        canUndoLastMeal = false
+        return true
+    }
+
+    var currentPlanStart: Date {
+        records.last(where: { $0.kind == .started || $0.kind == .adjusted || $0.kind == .imported })?.timestamp
+            ?? records.first?.timestamp ?? .distantPast
+    }
+
+    func nextWeeklyReset(after date: Date, calendar: Calendar = .current) -> Date? {
+        guard planType?.isWeekly == true else { return nil }
+        return calendar.date(byAdding: .day, value: 7, to: weekStart(for: date, calendar: calendar))
+    }
+
+    func daysUntilWeeklyReset(after date: Date, calendar: Calendar = .current) -> Int? {
+        guard let reset = nextWeeklyReset(after: date, calendar: calendar) else { return nil }
+        return calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: reset).day
+    }
+
+    private func weekStart(for date: Date, calendar: Calendar) -> Date {
+        let today = calendar.startOfDay(for: date)
+        let daysSinceSunday = calendar.component(.weekday, from: date) - 1
+        return calendar.date(byAdding: .day, value: -daysSinceSunday, to: today)!
     }
 
     @discardableResult
@@ -135,10 +220,8 @@ struct MealPlan: Codable, Equatable {
     @discardableResult
     mutating func resetWeeklyIfNeeded(at timestamp: Date = .now, calendar: Calendar = .current) -> Bool {
         guard planType?.isWeekly == true else { return false }
-        let today = calendar.startOfDay(for: timestamp)
-        let daysSinceSunday = calendar.component(.weekday, from: timestamp) - 1
-        guard let sunday = calendar.date(byAdding: .day, value: -daysSinceSunday, to: today),
-              sunday > weeklyResetAnchor else { return false }
+        let sunday = weekStart(for: timestamp, calendar: calendar)
+        guard sunday > weeklyResetAnchor else { return false }
 
         weeklyUsedMeals = 0
         weeklyResetAnchor = sunday

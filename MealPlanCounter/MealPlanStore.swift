@@ -30,6 +30,21 @@ final class MealPlanStore: ObservableObject {
         save()
     }
 
+    @discardableResult
+    func addPastMeal(type: MealType, at timestamp: Date) -> Bool {
+        refreshWeeklyReset()
+        guard var current = plan, current.addPastMeal(type: type, at: timestamp) else { return false }
+        plan = current
+        save()
+        return true
+    }
+
+    func updateMealType(for recordID: UUID, to mealType: MealType) {
+        guard var current = plan, current.updateMealType(for: recordID, to: mealType) else { return }
+        plan = current
+        save()
+    }
+
     func undoLastMeal() {
         refreshWeeklyReset()
         guard var current = plan, current.undoLastMeal() else { return }

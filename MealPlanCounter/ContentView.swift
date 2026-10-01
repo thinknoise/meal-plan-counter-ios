@@ -33,7 +33,8 @@ struct ContentView: View {
                                 screen = .settings
                             }
                         case .record:
-                            RecordView(plan: plan)
+                            RecordView(plan: plan, addMeal: store.addPastMeal,
+                                       updateMealType: store.updateMealType)
                         case .settings:
                             SettingsView(store: store) { screen = .count }
                         }
@@ -253,6 +254,18 @@ private struct CounterView: View {
                         Eyebrow("\(Int((plan.fractionUsed * 100).rounded()))% COMPLETE")
                     }
                     .padding(.top, 9)
+
+                    if plan.planType?.isWeekly == true {
+                        TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                            if let days = plan.daysUntilWeeklyReset(after: timeline.date) {
+                                Text("\(days) \(days == 1 ? "DAY" : "DAYS") UNTIL SUNDAY RESET")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .tracking(0.5)
+                                    .foregroundStyle(Palette.lime)
+                            }
+                        }
+                        .padding(.top, 17)
+                    }
                 }
                 .padding(.vertical, 22)
                 .overlay(alignment: .top) { Palette.cyan.frame(height: 2) }
@@ -294,6 +307,11 @@ private struct CounterView: View {
 
 private struct RecordView: View {
     let plan: MealPlan
+    let addMeal: (MealType, Date) -> Bool
+    let updateMealType: (UUID, MealType) -> Void
+
+    @State private var showingAddMeal = false
+    @State private var editingRecord: MealRecord?
 
     var body: some View {
         ScrollView {
@@ -310,6 +328,28 @@ private struct RecordView: View {
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 10)
 
+                if let reset = plan.nextWeeklyReset(after: .now) {
+                    Eyebrow("NEXT WEEKLY RESET")
+                        .foregroundStyle(Palette.cyan)
+                        .padding(.top, 22)
+                    Text(RecordRow.resetDateText(reset))
+                        .font(.system(size: 14, weight: .semibold))
+                        .padding(.top, 6)
+                }
+
+                if plan.planType != nil {
+                    Button { showingAddMeal = true } label: {
+                        Label("ADD MEAL", systemImage: "plus")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .tracking(0.7)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 49)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 24)
+                }
+
                 HStack(alignment: .firstTextBaseline) {
                     Eyebrow("ACTIVITY")
                     Spacer()
@@ -321,7 +361,15 @@ private struct RecordView: View {
 
                 LazyVStack(spacing: 0) {
                     ForEach(plan.records.reversed()) { record in
-                        RecordRow(record: record)
+                        if record.kind == .used {
+                            Button { editingRecord = record } label: {
+                                RecordRow(record: record)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Edit meal type")
+                        } else {
+                            RecordRow(record: record)
+                        }
                     }
                 }
 
@@ -338,6 +386,12 @@ private struct RecordView: View {
             .padding(.bottom, 35)
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
+        }
+        .sheet(isPresented: $showingAddMeal) {
+            AddMealSheet(earliestDate: plan.currentPlanStart, addMeal: addMeal)
+        }
+        .sheet(item: $editingRecord) { record in
+            EditMealSheet(record: record, updateMealType: updateMealType)
         }
     }
 }
@@ -356,7 +410,22 @@ private struct RecordRow: View {
     }
 
     private var dateText: String {
-        record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
+        if record.kind == .used {
+            return "\(Self.format(record.timestamp, as: "EEEE")) · \(record.mealType?.rawValue ?? "Unassigned") · \(Self.format(record.timestamp, as: "h:mm a"))"
+        }
+        return record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
+    }
+
+    static func resetDateText(_ date: Date) -> String {
+        format(date, as: "EEEE, MMM d, yyyy 'at' h:mm a")
+    }
+
+    private static func format(_ date: Date, as pattern: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = pattern
+        return formatter.string(from: date)
     }
 
     var body: some View {
@@ -369,6 +438,12 @@ private struct RecordRow: View {
                     .foregroundStyle(Palette.muted)
             }
             Spacer(minLength: 4)
+            if record.kind == .used {
+                Image(systemName: "pencil")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Palette.cyan)
+                    .accessibilityHidden(true)
+            }
             Text("\(record.remainingMeals)")
                 .font(.system(size: 29, weight: .black, design: .rounded))
                 .foregroundStyle(Palette.lime)
@@ -378,6 +453,129 @@ private struct RecordRow: View {
         .overlay(alignment: .top) { Palette.cyan.frame(height: 1) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(dateText), \(record.remainingMeals) meals left")
+    }
+}
+
+private struct AddMealSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let earliestDate: Date
+    let addMeal: (MealType, Date) -> Bool
+
+    @State private var mealType = MealType.inferred(at: .now)
+    @State private var mealDate = Date()
+    @State private var errorMessage = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Add Meal")
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                    Spacer()
+                    Button("CANCEL") { dismiss() }
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                }
+
+                Text("Record a meal you forgot to count. Choose when you ate it.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 12)
+
+                Eyebrow("MEAL TYPE")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 28)
+                Picker("Meal type", selection: $mealType) {
+                    ForEach(MealType.allCases) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.top, 10)
+
+                Eyebrow("DATE & TIME")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 27)
+                DatePicker("Meal date and time", selection: $mealDate,
+                           in: earliestDate...Date(), displayedComponents: [.date, .hourAndMinute])
+                    .datePickerStyle(.compact)
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.top, 10)
+
+                Text("Choose a date from when this plan began through now.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 11)
+
+                if !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.lime)
+                        .padding(.top, 17)
+                }
+
+                ActionButton(title: "Add meal", symbol: "plus") {
+                    if addMeal(mealType, mealDate) {
+                        dismiss()
+                    } else {
+                        errorMessage = "This meal must be within the current plan and have an available meal in that week or block."
+                    }
+                }
+                .padding(.top, 27)
+            }
+            .padding(24)
+        }
+        .foregroundStyle(Palette.paper)
+        .background(Palette.indigo)
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct EditMealSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let record: MealRecord
+    let updateMealType: (UUID, MealType) -> Void
+
+    @State private var mealType: MealType = .lunch
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("Edit Meal")
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                    Spacer()
+                    Button("CANCEL") { dismiss() }
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                }
+
+                Text(record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute()))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 13)
+
+                Eyebrow("MEAL TYPE")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 29)
+                Picker("Meal type", selection: $mealType) {
+                    ForEach(MealType.allCases) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.top, 10)
+
+                ActionButton(title: "Save meal type", symbol: "checkmark") {
+                    updateMealType(record.id, mealType)
+                    dismiss()
+                }
+                .padding(.top, 30)
+            }
+            .padding(24)
+        }
+        .foregroundStyle(Palette.paper)
+        .background(Palette.indigo)
+        .presentationDetents([.medium])
+        .onAppear { mealType = record.mealType ?? MealType.inferred(at: record.timestamp) }
     }
 }
 
