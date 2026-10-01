@@ -812,7 +812,7 @@ private struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 BrandHeader()
 
-                Text("Settings")
+                Text("Meal Plan Settings")
                     .font(.system(size: 39, weight: .black, design: .rounded))
                     .tracking(-2)
                     .lineLimit(1)
