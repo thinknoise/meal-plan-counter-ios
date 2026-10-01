@@ -64,6 +64,14 @@ final class MealPlanStore: ObservableObject {
         save()
     }
 
+    func updateName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var current = plan, current.name != trimmed else { return }
+        current.name = trimmed
+        plan = current
+        save()
+    }
+
     func updateSettings(name: String, planType: MealPlanType, semesterStartDate: Date?) {
         guard var current = plan else { return }
         let now = Date()

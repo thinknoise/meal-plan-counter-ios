@@ -1081,7 +1081,6 @@ private struct SettingsView: View {
     @State private var name = ""
     @State private var selectedPlan: MealPlanType?
     @State private var semesterStartDate: Date?
-    @State private var errorMessage = ""
     @State private var showingClearConfirmation = false
     @State private var showingReminderExplanation = false
 
@@ -1106,6 +1105,12 @@ private struct SettingsView: View {
 
                 LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
                     .textContentType(.givenName)
+                    .onChange(of: name) { _, newName in store.updateName(newName) }
+
+                Text("Name saves as you type.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, 9)
 
                 PlanPicker(selection: $selectedPlan)
                     .padding(.top, 25)
@@ -1120,14 +1125,8 @@ private struct SettingsView: View {
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 13)
 
-                if !errorMessage.isEmpty {
-                    Text(errorMessage)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Palette.lime)
-                        .padding(.top, 14)
-                }
-
-                ActionButton(title: "Save changes", symbol: "checkmark", action: save)
+                ActionButton(title: "Save changes", symbol: "checkmark",
+                             isEnabled: planSettingsChanged, action: save)
                 .padding(.top, 31)
 
                 Eyebrow("REMINDERS")
@@ -1241,7 +1240,20 @@ private struct SettingsView: View {
         name = plan.name
         selectedPlan = plan.planType
         semesterStartDate = plan.semesterStartDate
-        errorMessage = ""
+    }
+
+    private var planSettingsChanged: Bool {
+        guard let plan = store.plan, let selectedPlan else { return false }
+        guard selectedPlan == plan.planType else { return true }
+        guard selectedPlan == .block140 else { return false }
+        switch (semesterStartDate, plan.semesterStartDate) {
+        case (nil, nil): return false
+        case let (newDate?, savedDate?):
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+            return !calendar.isDate(newDate, inSameDayAs: savedDate)
+        default: return true
+        }
     }
 
     private var planExplanation: String {
@@ -1257,12 +1269,8 @@ private struct SettingsView: View {
     }
 
     private func save() {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let selectedPlan else {
-            errorMessage = "Enter a name and choose a meal plan."
-            return
-        }
-        store.updateSettings(name: trimmed, planType: selectedPlan,
+        guard planSettingsChanged, let selectedPlan, let savedName = store.plan?.name else { return }
+        store.updateSettings(name: savedName, planType: selectedPlan,
                              semesterStartDate: selectedPlan == .block140 ? semesterStartDate : nil)
         goBack()
     }
