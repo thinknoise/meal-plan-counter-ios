@@ -71,13 +71,18 @@ struct MealRecord: Codable, Equatable, Identifiable {
     var remainingMeals: Int
     let kind: Kind
     var mealType: MealType?
+    var tappedAt: Date?
+    var recordedAt: Date?
 
-    init(kind: Kind, remainingMeals: Int, at timestamp: Date, mealType: MealType? = nil) {
+    init(kind: Kind, remainingMeals: Int, at timestamp: Date, mealType: MealType? = nil,
+         tappedAt: Date? = nil, recordedAt: Date? = nil) {
         id = UUID()
         self.timestamp = timestamp
         self.remainingMeals = remainingMeals
         self.kind = kind
         self.mealType = mealType
+        self.tappedAt = tappedAt
+        self.recordedAt = recordedAt
     }
 }
 
@@ -130,14 +135,18 @@ struct MealPlan: Codable, Equatable {
             legacyUsedMeals += 1
         }
         records.append(MealRecord(kind: .used, remainingMeals: remainingMeals, at: timestamp,
-                                  mealType: MealType.inferred(at: timestamp, calendar: calendar)))
+                                  mealType: MealType.inferred(at: timestamp, calendar: calendar),
+                                  tappedAt: timestamp))
         canUndoLastMeal = true
         return true
     }
 
-    mutating func updateMealType(for recordID: UUID, to mealType: MealType) -> Bool {
+    mutating func updateMealType(for recordID: UUID, to mealType: MealType,
+                                 at editedAt: Date = .now) -> Bool {
         guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }) else { return false }
+        guard records[index].mealType != mealType else { return false }
         records[index].mealType = mealType
+        records[index].recordedAt = editedAt
         return true
     }
 
@@ -168,7 +177,7 @@ struct MealPlan: Codable, Equatable {
         }
 
         let record = MealRecord(kind: .used, remainingMeals: balanceBeforeMeal - 1,
-                                at: timestamp, mealType: type)
+                                at: timestamp, mealType: type, recordedAt: now)
         let insertionIndex = records.firstIndex(where: { $0.timestamp > timestamp }) ?? records.endIndex
         records.insert(record, at: insertionIndex)
 

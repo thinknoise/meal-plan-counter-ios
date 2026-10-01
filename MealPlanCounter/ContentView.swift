@@ -420,7 +420,7 @@ private struct RecordRow: View {
     private var title: String {
         switch record.kind {
         case .started: "Tracking started"
-        case .used: "Meal used"
+        case .used: "\(Self.format(record.timestamp, as: "EEEE")) · \(record.mealType?.rawValue ?? "Unassigned")"
         case .adjusted: "Plan updated"
         case .imported: "Record started"
         case .reset: "Week reset"
@@ -429,12 +429,21 @@ private struct RecordRow: View {
 
     private var dateText: String {
         if record.kind == .used {
-            return "\(Self.format(record.timestamp, as: "EEEE")) · \(record.mealType?.rawValue ?? "Unassigned") · \(Self.format(record.timestamp, as: "h:mm a"))"
+            return Self.format(record.timestamp, as: "h:mm a")
         }
         if record.kind == .started {
             return Self.dayDateText(record.timestamp)
         }
         return record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
+    }
+
+    private var entryText: String? {
+        guard record.kind == .used else { return nil }
+        if let recordedAt = record.recordedAt {
+            return "Recorded: \(Self.format(recordedAt, as: "EEE, MMM d, yyyy 'at' h:mm a"))"
+        }
+        // Earlier records have no action timestamp; treat their meal time as a tap.
+        return "Tapped: \(Self.format(record.tappedAt ?? record.timestamp, as: "EEE, MMM d, yyyy 'at' h:mm a"))"
     }
 
     static func resetDateText(_ date: Date) -> String {
@@ -461,6 +470,11 @@ private struct RecordRow: View {
                 Text(dateText)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Palette.muted)
+                if let entryText {
+                    Text(entryText)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Palette.muted)
+                }
             }
             Spacer(minLength: 4)
             if record.kind == .used {
@@ -477,7 +491,7 @@ private struct RecordRow: View {
         .padding(.vertical, 18)
         .overlay(alignment: .top) { Palette.cyan.frame(height: 1) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(dateText), \(record.remainingMeals) meals left")
+        .accessibilityLabel("\(title), \(dateText), \(entryText.map { $0 + ", " } ?? "")\(record.remainingMeals) meals left")
     }
 }
 
@@ -848,7 +862,7 @@ private struct SettingsView: View {
                 ActionButton(title: "Save changes", symbol: "checkmark", action: save)
                 .padding(.top, 31)
 
-                Button("CLEAR PLAN FROM THIS IPHONE", role: .destructive) {
+                Button("CLEAR EVERYTHING FROM THIS IPHONE", role: .destructive) {
                     showingClearConfirmation = true
                 }
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -864,12 +878,12 @@ private struct SettingsView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .onAppear(perform: loadFields)
-        .confirmationDialog("Clear your meal plan?", isPresented: $showingClearConfirmation) {
-            Button("Clear plan", role: .destructive) {
+        .confirmationDialog("Start all over on this iPhone?", isPresented: $showingClearConfirmation) {
+            Button("Clear everything and start over", role: .destructive) {
                 store.clear()
             }
         } message: {
-            Text("Your saved count and meal record will be removed from this iPhone.")
+            Text("Your saved plan, meal count, and meal record will be deleted from this iPhone. You'll return to setup.")
         }
     }
 
