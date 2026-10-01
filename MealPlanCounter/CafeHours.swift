@@ -42,14 +42,7 @@ enum CafeHours {
         let selectedDay = localCalendar.dateComponents([.year, .month, .day], from: selectedDate)
         guard let cafeDay = cafeCalendar.date(from: selectedDay) else { return nil }
         let weekday = cafeCalendar.component(.weekday, from: cafeDay)
-        let isWeekend = weekday == 1 || weekday == 7
-        let serviceName: String
-        switch mealType {
-        case .breakfast: serviceName = "Breakfast"
-        case .lunch: serviceName = isWeekend ? "Brunch" : "Lunch"
-        case .dinner: serviceName = isWeekend ? "Late night" : "Dinner"
-        }
-        guard let service = services(for: weekday).first(where: { $0.name == serviceName }) else { return nil }
+        guard let service = mealService(for: mealType, weekday: weekday) else { return nil }
 
         var closingComponents = cafeCalendar.dateComponents([.year, .month, .day], from: cafeDay)
         closingComponents.hour = service.endMinute / 60
@@ -82,5 +75,23 @@ enum CafeHours {
 
     private static func services(for weekday: Int) -> [CafeService] {
         weekday == 1 || weekday == 7 ? weekends : weekdays
+    }
+
+    static func mealServices(for weekday: Int) -> [(mealType: MealType, service: CafeService)] {
+        MealType.allCases.compactMap { mealType in
+            guard let service = mealService(for: mealType, weekday: weekday) else { return nil }
+            return (mealType, service)
+        }
+    }
+
+    private static func mealService(for mealType: MealType, weekday: Int) -> CafeService? {
+        let isWeekend = weekday == 1 || weekday == 7
+        let serviceName: String
+        switch mealType {
+        case .breakfast: serviceName = "Breakfast"
+        case .lunch: serviceName = isWeekend ? "Brunch" : "Lunch"
+        case .dinner: serviceName = isWeekend ? "Late night" : "Dinner"
+        }
+        return services(for: weekday).first(where: { $0.name == serviceName })
     }
 }

@@ -3,26 +3,67 @@ import CoreLocation
 import Foundation
 import UserNotifications
 
+private enum TimedReminderKind: CaseIterable {
+    case opening
+    case closing
+
+    var requestPrefix: String {
+        switch self {
+        case .opening: "steves-cafe-opening-"
+        case .closing: "steves-cafe-closing-"
+        }
+    }
+
+    var signatureKey: String {
+        switch self {
+        case .opening: "steves-cafe-opening-schedule-v1"
+        case .closing: "steves-cafe-closing-schedule-v1"
+        }
+    }
+}
+
 @MainActor
 final class CafeReminder: NSObject, ObservableObject {
     @Published private(set) var isEnabled: Bool
     @Published private(set) var statusMessage = "Off. Turn this on for a reminder when you arrive at Steve's Café."
     @Published private(set) var needsSystemSettings = false
+    @Published private(set) var isMealTimeEnabled: Bool
+    @Published private(set) var mealTimeStatusMessage = "Off."
+    @Published private(set) var mealTimeNeedsSystemSettings = false
+    @Published private(set) var isClosingSoonEnabled: Bool
+    @Published private(set) var closingSoonStatusMessage = "Off."
+    @Published private(set) var closingSoonNeedsSystemSettings = false
+
+    var needsAnySystemSettings: Bool {
+        needsSystemSettings || mealTimeNeedsSystemSettings || closingSoonNeedsSystemSettings
+    }
 
     private static let preferenceKey = "steves-cafe-reminder-enabled-v1"
+    private static let mealTimePreferenceKey = "steves-cafe-meal-time-enabled-v1"
+    private static let closingSoonPreferenceKey = "steves-cafe-closing-soon-enabled-v1"
     private static let requestID = "steves-cafe-entry-30m"
     private let defaults: UserDefaults
     private let locationManager = CLLocationManager()
     private let notifications = UNUserNotificationCenter.current()
     private var revision = 0
     private var isRegistering = false
+    private var mealTimeRevision = 0
+    private var closingSoonRevision = 0
+    private var isRegisteringMealTime = false
+    private var isRegisteringClosingSoon = false
+    private var notificationPermissionTask: Task<Void, Never>?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isEnabled = defaults.bool(forKey: Self.preferenceKey)
+        isMealTimeEnabled = defaults.bool(forKey: Self.mealTimePreferenceKey)
+        isClosingSoonEnabled = defaults.bool(forKey: Self.closingSoonPreferenceKey)
         super.init()
         locationManager.delegate = self
         notifications.delegate = self
+        for kind in TimedReminderKind.allCases where !timedEnabled(kind) {
+            cancelTimedRequests(kind)
+        }
     }
 
     func enable() {
@@ -48,7 +89,19 @@ final class CafeReminder: NSObject, ObservableObject {
 
     func clear() {
         disable()
+        setMealTimeEnabled(false)
+        setClosingSoonEnabled(false)
         defaults.removeObject(forKey: Self.preferenceKey)
+        defaults.removeObject(forKey: Self.mealTimePreferenceKey)
+        defaults.removeObject(forKey: Self.closingSoonPreferenceKey)
+    }
+
+    func setMealTimeEnabled(_ enabled: Bool) {
+        setTimedEnabled(enabled, for: .opening)
+    }
+
+    func setClosingSoonEnabled(_ enabled: Bool) {
+        setTimedEnabled(enabled, for: .closing)
     }
 
     // A pending location notification survives app launches. Refresh only checks
@@ -56,15 +109,13 @@ final class CafeReminder: NSObject, ObservableObject {
     func refresh() {
         let currentRevision = revision
         Task { await synchronize(revision: currentRevision) }
+        for kind in TimedReminderKind.allCases where timedEnabled(kind) {
+            refreshTimed(kind)
+        }
     }
 
     private func requestPermissionsAndRefresh(revision expectedRevision: Int) async {
-        let notificationSettings = await notifications.notificationSettings()
-        guard isCurrent(expectedRevision) else { return }
-
-        if notificationSettings.authorizationStatus == .notDetermined {
-            _ = try? await notifications.requestAuthorization(options: [.alert])
-        }
+        await requestNotificationPermissionIfNeeded()
         guard isCurrent(expectedRevision) else { return }
 
         let updatedSettings = await notifications.notificationSettings()
@@ -173,6 +224,234 @@ final class CafeReminder: NSObject, ObservableObject {
 
     private func isCurrent(_ expectedRevision: Int) -> Bool {
         isEnabled && revision == expectedRevision
+    }
+
+    private func requestNotificationPermissionIfNeeded() async {
+        if let notificationPermissionTask {
+            await notificationPermissionTask.value
+            return
+        }
+        let task = Task {
+            let settings = await notifications.notificationSettings()
+            if settings.authorizationStatus == .notDetermined {
+                _ = try? await notifications.requestAuthorization(options: [.alert])
+            }
+        }
+        notificationPermissionTask = task
+        await task.value
+        notificationPermissionTask = nil
+    }
+
+    private func setTimedEnabled(_ enabled: Bool, for kind: TimedReminderKind) {
+        switch kind {
+        case .opening:
+            mealTimeRevision += 1
+            isMealTimeEnabled = enabled
+            defaults.set(enabled, forKey: Self.mealTimePreferenceKey)
+        case .closing:
+            closingSoonRevision += 1
+            isClosingSoonEnabled = enabled
+            defaults.set(enabled, forKey: Self.closingSoonPreferenceKey)
+        }
+
+        if enabled {
+            setTimedStatus("Setting up the reminder…", for: kind)
+            let expectedRevision = timedRevision(kind)
+            Task {
+                await requestNotificationPermissionIfNeeded()
+                await synchronizeTimed(kind, revision: expectedRevision)
+            }
+        } else {
+            cancelTimedRequests(kind)
+            defaults.removeObject(forKey: kind.signatureKey)
+            setTimedStatus("Off.", for: kind)
+        }
+    }
+
+    private func refreshTimed(_ kind: TimedReminderKind) {
+        let expectedRevision = timedRevision(kind)
+        Task { await synchronizeTimed(kind, revision: expectedRevision) }
+    }
+
+    private func synchronizeTimed(_ kind: TimedReminderKind, revision expectedRevision: Int) async {
+        guard isTimedCurrent(kind, revision: expectedRevision) else { return }
+        let settings = await notifications.notificationSettings()
+        guard isTimedCurrent(kind, revision: expectedRevision) else { return }
+
+        switch settings.authorizationStatus {
+        case .denied:
+            pauseTimed(kind, message: "Notifications are off for CAMPc. Allow alerts in iPhone Settings.", openSettings: true)
+            return
+        case .notDetermined:
+            pauseTimed(kind, message: "Turn this reminder off and on to allow notifications.")
+            return
+        case .provisional:
+            pauseTimed(kind, message: "Turn on notification alerts for CAMPc in iPhone Settings.", openSettings: true)
+            return
+        case .authorized, .ephemeral:
+            if settings.alertSetting != .enabled {
+                pauseTimed(kind, message: "Turn on notification alerts for CAMPc in iPhone Settings.", openSettings: true)
+                return
+            }
+        @unknown default:
+            pauseTimed(kind, message: "Notification permission is unavailable. Check iPhone Settings.", openSettings: true)
+            return
+        }
+
+        guard !timedIsRegistering(kind) else { return }
+        setTimedRegistering(true, for: kind)
+        defer {
+            setTimedRegistering(false, for: kind)
+            if timedRevision(kind) != expectedRevision && timedEnabled(kind) { refreshTimed(kind) }
+        }
+
+        let expected = Self.timedRequests(for: kind)
+        let signature = Self.scheduleSignature(for: expected)
+        let pending = await notifications.pendingNotificationRequests()
+        guard isTimedCurrent(kind, revision: expectedRevision) else { return }
+        let current = pending.filter { $0.identifier.hasPrefix(kind.requestPrefix) }
+        let expectedIDs = Set(expected.map(\.identifier))
+        if defaults.string(forKey: kind.signatureKey) == signature,
+           Set(current.map(\.identifier)) == expectedIDs {
+            setTimedStatus(readyMessage(for: kind), for: kind)
+            return
+        }
+
+        let obsoleteIDs = current.map(\.identifier).filter { !expectedIDs.contains($0) }
+        if !obsoleteIDs.isEmpty {
+            notifications.removePendingNotificationRequests(withIdentifiers: obsoleteIDs)
+        }
+        for request in expected {
+            guard isTimedCurrent(kind, revision: expectedRevision) else {
+                cancelTimedRequests(kind)
+                return
+            }
+            do {
+                // The stable identifier replaces an older request when hours change.
+                try await notifications.add(request)
+            } catch {
+                guard isTimedCurrent(kind, revision: expectedRevision) else { return }
+                cancelTimedRequests(kind)
+                defaults.removeObject(forKey: kind.signatureKey)
+                setTimedStatus("Couldn't schedule reminders. Turn this off and on to try again.", for: kind)
+                return
+            }
+        }
+        guard isTimedCurrent(kind, revision: expectedRevision) else {
+            cancelTimedRequests(kind)
+            return
+        }
+        defaults.set(signature, forKey: kind.signatureKey)
+        setTimedStatus(readyMessage(for: kind), for: kind)
+    }
+
+    private func pauseTimed(_ kind: TimedReminderKind, message: String, openSettings: Bool = false) {
+        cancelTimedRequests(kind)
+        defaults.removeObject(forKey: kind.signatureKey)
+        setTimedStatus(message, for: kind, openSettings: openSettings)
+    }
+
+    private func cancelTimedRequests(_ kind: TimedReminderKind) {
+        let identifiers = Self.allTimedIDs(for: kind)
+        notifications.removePendingNotificationRequests(withIdentifiers: identifiers)
+        notifications.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
+    private func setTimedStatus(_ message: String, for kind: TimedReminderKind, openSettings: Bool = false) {
+        switch kind {
+        case .opening:
+            mealTimeStatusMessage = message
+            mealTimeNeedsSystemSettings = openSettings
+        case .closing:
+            closingSoonStatusMessage = message
+            closingSoonNeedsSystemSettings = openSettings
+        }
+    }
+
+    private func readyMessage(for kind: TimedReminderKind) -> String {
+        switch kind {
+        case .opening: "Ready. Follows Steve's regular meal opening times."
+        case .closing: "Ready. Alerts 20 minutes before each regular meal period ends."
+        }
+    }
+
+    private func timedEnabled(_ kind: TimedReminderKind) -> Bool {
+        switch kind {
+        case .opening: isMealTimeEnabled
+        case .closing: isClosingSoonEnabled
+        }
+    }
+
+    private func timedRevision(_ kind: TimedReminderKind) -> Int {
+        switch kind {
+        case .opening: mealTimeRevision
+        case .closing: closingSoonRevision
+        }
+    }
+
+    private func isTimedCurrent(_ kind: TimedReminderKind, revision expectedRevision: Int) -> Bool {
+        timedEnabled(kind) && timedRevision(kind) == expectedRevision
+    }
+
+    private func timedIsRegistering(_ kind: TimedReminderKind) -> Bool {
+        switch kind {
+        case .opening: isRegisteringMealTime
+        case .closing: isRegisteringClosingSoon
+        }
+    }
+
+    private func setTimedRegistering(_ registering: Bool, for kind: TimedReminderKind) {
+        switch kind {
+        case .opening: isRegisteringMealTime = registering
+        case .closing: isRegisteringClosingSoon = registering
+        }
+    }
+
+    private static func allTimedIDs(for kind: TimedReminderKind) -> [String] {
+        (1...7).flatMap { weekday in
+            MealType.allCases.map { mealType in
+                "\(kind.requestPrefix)\(weekday)-\(mealType.rawValue.lowercased())"
+            }
+        }
+    }
+
+    private static func timedRequests(for kind: TimedReminderKind) -> [UNNotificationRequest] {
+        let timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+
+        return (1...7).flatMap { weekday in
+            CafeHours.mealServices(for: weekday).map { period in
+                let minute = kind == .opening ? period.service.startMinute : period.service.endMinute - 20
+                var components = DateComponents()
+                components.calendar = calendar
+                components.timeZone = timeZone
+                components.weekday = weekday
+                components.hour = minute / 60
+                components.minute = minute % 60
+
+                let name = period.mealType.rawValue
+                let content = UNMutableNotificationContent()
+                // Keep these as quiet alerts: no sound, badge, or elevated interruption level.
+                if kind == .opening {
+                    content.title = "\(name) is open"
+                    content.body = "Steve's Café is serving \(name.lowercased())."
+                } else {
+                    content.title = "\(name) ends in 20 minutes"
+                    content.body = "Steve's Café is closing for \(name.lowercased()) soon."
+                }
+                let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+                let identifier = "\(kind.requestPrefix)\(weekday)-\(name.lowercased())"
+                return UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+            }
+        }
+    }
+
+    private static func scheduleSignature(for requests: [UNNotificationRequest]) -> String {
+        requests.map { request in
+            let components = (request.trigger as? UNCalendarNotificationTrigger)?.dateComponents
+            return "\(request.identifier)|\(components?.timeZone?.identifier ?? "")|\(components?.weekday ?? -1)|\(components?.hour ?? -1)|\(components?.minute ?? -1)|\(request.content.title)|\(request.content.body)"
+        }.joined(separator: "\n")
     }
 
     private static func notificationRequest() -> UNNotificationRequest {

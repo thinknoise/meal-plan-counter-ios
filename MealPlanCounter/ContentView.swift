@@ -67,6 +67,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             store.refreshWeeklyReset()
+            cafeReminder.refresh()
         }
     }
 
@@ -1133,25 +1134,45 @@ private struct SettingsView: View {
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 42)
 
-                Toggle(isOn: Binding(
-                    get: { cafeReminder.isEnabled },
-                    set: { enabled in
-                        if enabled { showingReminderExplanation = true }
-                        else { cafeReminder.disable() }
-                    }
-                )) {
-                    Text("Steve's Café Reminder")
-                        .font(.system(size: 16, weight: .bold))
-                }
-                .tint(Palette.lime)
-                .padding(.top, 13)
+                reminderSetting(
+                    "Steve's Café Location Reminder",
+                    detail: "Remind me when I arrive at Steve's.",
+                    isOn: Binding(
+                        get: { cafeReminder.isEnabled },
+                        set: { enabled in
+                            if enabled { showingReminderExplanation = true }
+                            else { cafeReminder.disable() }
+                        }
+                    ),
+                    status: cafeReminder.isEnabled ? cafeReminder.statusMessage : nil
+                )
 
-                Text(cafeReminder.statusMessage)
-                    .font(.system(size: 12, weight: .medium))
+                reminderSetting(
+                    "Meal Time Reminders",
+                    detail: "Let me know when each meal begins.",
+                    isOn: Binding(
+                        get: { cafeReminder.isMealTimeEnabled },
+                        set: cafeReminder.setMealTimeEnabled
+                    ),
+                    status: cafeReminder.isMealTimeEnabled ? cafeReminder.mealTimeStatusMessage : nil
+                )
+
+                reminderSetting(
+                    "Closing Soon Reminders",
+                    detail: "Remind me 20 minutes before a meal period ends.",
+                    isOn: Binding(
+                        get: { cafeReminder.isClosingSoonEnabled },
+                        set: cafeReminder.setClosingSoonEnabled
+                    ),
+                    status: cafeReminder.isClosingSoonEnabled ? cafeReminder.closingSoonStatusMessage : nil
+                )
+
+                Text("Based on regular café hours. Holidays and academic breaks may differ.")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, 8)
+                    .padding(.top, 18)
 
-                if cafeReminder.needsSystemSettings,
+                if cafeReminder.needsAnySystemSettings,
                    let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                     Link("OPEN IPHONE SETTINGS ↗", destination: settingsURL)
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -1188,8 +1209,31 @@ private struct SettingsView: View {
                 store.clear()
             }
         } message: {
-            Text("Your saved plan, meal count, meal record, and café reminder setting will be deleted from this iPhone. You'll return to setup.")
+            Text("Your saved plan, meal count, meal record, and reminder settings will be deleted from this iPhone. You'll return to setup.")
         }
+    }
+
+    private func reminderSetting(_ title: String, detail: String,
+                                 isOn: Binding<Bool>, status: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: isOn) {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .tint(Palette.lime)
+
+            Text(detail)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.muted)
+
+            if let status {
+                Text(status)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.muted)
+            }
+        }
+        .padding(.top, 20)
     }
 
     private func loadFields() {

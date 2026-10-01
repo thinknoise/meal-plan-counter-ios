@@ -6,6 +6,8 @@ Meal Plan Counter saves the name, meal counts, plan settings, and meal activity 
 
 If you turn on the optional Steve's Café reminder, iOS uses your device's location to detect when you enter the café area and show a local notification. The app does not continuously track your location, save a location history, or send your location to us. You can turn the reminder off in the app's Settings.
 
+Optional meal opening and closing reminders use the café's regular weekly schedule to set local notifications on your iPhone. They do not use your location. You can turn either reminder off in Settings.
+
 The app includes a link to Bon Appétit's CalArts café website for current menus and hours. Opening that link leaves the app, and the website's own privacy practices apply.
 
 For questions about this policy or the app, use the [support page](https://github.com/thinknoise/meal-plan-counter-ios/issues).
