@@ -1001,13 +1001,13 @@ private struct MovingCafeBanner: View {
             Palette.lime
                 .overlay {
                     LinearGradient(
-                        colors: [.clear, .white.opacity(0.12), .clear],
+                        colors: [.clear, .white.opacity(0.26), .clear],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
-                    .frame(width: geometry.size.width * 0.65)
-                    .offset(x: sweepRight ? geometry.size.width * 0.85 : -geometry.size.width * 0.85)
-                    .animation(.linear(duration: 10).repeatForever(autoreverses: false), value: sweepRight)
+                    .frame(width: geometry.size.width * 0.9)
+                    .offset(x: sweepRight ? geometry.size.width * 0.5 : -geometry.size.width * 0.5)
+                    .animation(.linear(duration: 12).repeatForever(autoreverses: false), value: sweepRight)
                 }
                 .clipped()
         }
