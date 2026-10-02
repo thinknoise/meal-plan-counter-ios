@@ -260,9 +260,13 @@ struct MealPlan: Codable, Equatable {
             records[index].kind == .used &&
             (affectedWeek.map { weekStart(for: records[index].timestamp, calendar: calendar) == $0 } ?? true)
         }
+        let insertionIndex = ((start + 1)..<end).first {
+            records[$0].timestamp > timestamp ||
+                (records[$0].timestamp == timestamp && records[$0].kind == .used)
+        } ?? end
         let lowestBalance = min(allowance, relevant.map { records[$0].remainingMeals }.min() ?? allowance)
         guard lowestBalance > 0 else { return false }
-        let balanceBeforeMeal = relevant.last(where: { records[$0].timestamp <= timestamp })
+        let balanceBeforeMeal = relevant.last(where: { $0 < insertionIndex })
             .map { records[$0].remainingMeals } ?? allowance
         guard balanceBeforeMeal > 0 else { return false }
 
@@ -270,12 +274,11 @@ struct MealPlan: Codable, Equatable {
         let currentWeek = isWeekly ? weekStart(for: now, calendar: calendar) : nil
         guard !isCurrentEpoch || affectedWeek != currentWeek || remainingMeals > 0 else { return false }
 
-        for index in relevant where records[index].timestamp > timestamp {
+        for index in relevant where index >= insertionIndex {
             records[index].remainingMeals -= 1
         }
         var record = newRecord
         record.remainingMeals = balanceBeforeMeal - 1
-        let insertionIndex = records.firstIndex(where: { $0.timestamp > timestamp }) ?? records.endIndex
         records.insert(record, at: insertionIndex)
 
         if isCurrentEpoch {

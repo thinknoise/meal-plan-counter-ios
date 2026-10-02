@@ -661,8 +661,7 @@ private struct EditMealSheet: View {
     }
 
     private var usesClosingTime: Bool {
-        !Calendar.current.isDate(mealDate, inSameDayAs: record.timestamp) ||
-            (record.recordedAt != nil && record.tappedAt == nil && mealType != record.mealType)
+        !Calendar.current.isDate(mealDate, inSameDayAs: record.timestamp)
     }
 
     private var closingTimeText: String? {
