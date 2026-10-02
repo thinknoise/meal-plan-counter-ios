@@ -33,6 +33,23 @@ enum CafeHours {
         CafeService(name: "Late night", startMinute: 16 * 60, endMinute: 19 * 60, timeRange: "4–7 PM", openingTime: "4 PM")
     ]
 
+    static func closingDate(for mealType: MealType, on selectedDate: Date) -> Date? {
+        var localCalendar = Calendar(identifier: .gregorian)
+        localCalendar.timeZone = .current
+        var cafeCalendar = Calendar(identifier: .gregorian)
+        cafeCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+
+        let selectedDay = localCalendar.dateComponents([.year, .month, .day], from: selectedDate)
+        guard let cafeDay = cafeCalendar.date(from: selectedDay) else { return nil }
+        let weekday = cafeCalendar.component(.weekday, from: cafeDay)
+        guard let service = mealService(for: mealType, weekday: weekday) else { return nil }
+
+        var closingComponents = cafeCalendar.dateComponents([.year, .month, .day], from: cafeDay)
+        closingComponents.hour = service.endMinute / 60
+        closingComponents.minute = service.endMinute % 60
+        return cafeCalendar.date(from: closingComponents)
+    }
+
     static func status(at date: Date) -> CafeStatus {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
@@ -58,5 +75,23 @@ enum CafeHours {
 
     private static func services(for weekday: Int) -> [CafeService] {
         weekday == 1 || weekday == 7 ? weekends : weekdays
+    }
+
+    static func mealServices(for weekday: Int) -> [(mealType: MealType, service: CafeService)] {
+        MealType.allCases.compactMap { mealType in
+            guard let service = mealService(for: mealType, weekday: weekday) else { return nil }
+            return (mealType, service)
+        }
+    }
+
+    private static func mealService(for mealType: MealType, weekday: Int) -> CafeService? {
+        let isWeekend = weekday == 1 || weekday == 7
+        let serviceName: String
+        switch mealType {
+        case .breakfast: serviceName = "Breakfast"
+        case .lunch: serviceName = isWeekend ? "Brunch" : "Lunch"
+        case .dinner: serviceName = isWeekend ? "Late night" : "Dinner"
+        }
+        return services(for: weekday).first(where: { $0.name == serviceName })
     }
 }

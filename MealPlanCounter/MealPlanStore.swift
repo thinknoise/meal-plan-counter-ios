@@ -30,6 +30,33 @@ final class MealPlanStore: ObservableObject {
         save()
     }
 
+    @discardableResult
+    func addPastMeal(type: MealType, at timestamp: Date) -> Bool {
+        refreshWeeklyReset()
+        guard var current = plan, current.addPastMeal(type: type, at: timestamp) else { return false }
+        plan = current
+        save()
+        return true
+    }
+
+    @discardableResult
+    func editMeal(recordID: UUID, type: MealType, at timestamp: Date) -> Bool {
+        refreshWeeklyReset()
+        guard var current = plan, current.editMeal(recordID: recordID, type: type, at: timestamp) else { return false }
+        plan = current
+        save()
+        return true
+    }
+
+    @discardableResult
+    func removeMeal(recordID: UUID) -> Bool {
+        refreshWeeklyReset()
+        guard var current = plan, current.removeMeal(recordID: recordID) else { return false }
+        plan = current
+        save()
+        return true
+    }
+
     func undoLastMeal() {
         refreshWeeklyReset()
         guard var current = plan, current.undoLastMeal() else { return }
@@ -37,11 +64,20 @@ final class MealPlanStore: ObservableObject {
         save()
     }
 
-    func updateSettings(name: String, planType: MealPlanType) {
+    func updateName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var current = plan, current.name != trimmed else { return }
+        current.name = trimmed
+        plan = current
+        save()
+    }
+
+    func updateSettings(name: String, planType: MealPlanType, semesterStartDate: Date?) {
         guard var current = plan else { return }
         let now = Date()
         current.resetWeeklyIfNeeded(at: now)
-        current.updateSettings(name: name, planType: planType, at: now)
+        current.updateSettings(name: name, planType: planType,
+                               semesterStartDate: semesterStartDate, at: now)
         plan = current
         save()
     }
