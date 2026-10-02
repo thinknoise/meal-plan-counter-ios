@@ -1187,11 +1187,18 @@ private struct SettingsView: View {
                 .foregroundStyle(Palette.paper)
                 .padding(.top, 48)
 
-                Text("CalArts Meal Plan Counter is an independent app and is not affiliated with or endorsed by California Institute of the Arts. Meal-plan information, café hours, and menus may change; check official CalArts sources for current information.")
-                    .font(.footnote)
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 32)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Meal counts in this app are tracked locally and are not connected to CalArts’ official dining or campus-card systems.")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Palette.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("CalArts Meal Plan Counter is an independent app and is not affiliated with or endorsed by California Institute of the Arts, Bon Appétit, Illumia, or Transact. Meal plans, café hours, and menus may change; check official sources for current information.")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 32)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
