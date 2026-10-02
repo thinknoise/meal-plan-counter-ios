@@ -463,7 +463,7 @@ final class CafeReminder: NSObject, ObservableObject {
 
         let content = UNMutableNotificationContent()
         content.title = "You @ Steve's Cafe?"
-        content.body = "Don't forget to count your meal."
+        content.body = "Don't forgets to count yo'meal"
 
         let trigger = UNLocationNotificationTrigger(region: region, repeats: true)
         return UNNotificationRequest(identifier: requestID, content: content, trigger: trigger)

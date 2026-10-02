@@ -74,7 +74,7 @@ struct ContentView: View {
     private var bottomBar: some View {
         HStack(spacing: 0) {
             tabButton("COUNT", symbol: "circle.grid.2x2.fill", destination: .count)
-            tabButton("RECORD", symbol: "clock", destination: .record)
+            tabButton("MEALS", symbol: "clock", destination: .record)
             tabButton("SETTINGS", symbol: "gearshape", destination: .settings)
         }
         .padding(.top, 13)
@@ -323,7 +323,7 @@ private struct RecordView: View {
             VStack(alignment: .leading, spacing: 0) {
                 BrandHeader()
 
-                Text("Meal record")
+                Text("Meals")
                     .font(.system(size: 39, weight: .black, design: .rounded))
                     .tracking(-2)
                     .padding(.top, 28)
@@ -429,7 +429,7 @@ private struct RecordRow: View {
     private var title: String {
         switch record.kind {
         case .started: "Tracking started"
-        case .used: "\(Self.format(record.timestamp, as: "EEEE")) · \(record.mealType?.rawValue ?? "Unassigned")"
+        case .used: "\(Self.dayDateText(record.timestamp)) · \(record.mealType?.rawValue ?? "Unassigned")"
         case .adjusted: "Plan updated"
         case .imported: "Record started"
         case .reset: "Week reset"
@@ -438,7 +438,7 @@ private struct RecordRow: View {
 
     private var dateText: String {
         if record.kind == .used {
-            return Self.format(record.timestamp, as: "MMM d, yyyy '·' h:mm a")
+            return Self.format(record.timestamp, as: "h:mm a")
         }
         if record.kind == .started {
             return Self.dayDateText(record.timestamp)
@@ -1001,13 +1001,13 @@ private struct MovingCafeBanner: View {
             Palette.lime
                 .overlay {
                     LinearGradient(
-                        colors: [.clear, .white.opacity(0.12), .clear],
+                        colors: [.clear, .white.opacity(0.26), .clear],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
-                    .frame(width: geometry.size.width * 0.65)
-                    .offset(x: sweepRight ? geometry.size.width * 0.85 : -geometry.size.width * 0.85)
-                    .animation(.linear(duration: 10).repeatForever(autoreverses: false), value: sweepRight)
+                    .frame(width: geometry.size.width * 0.9)
+                    .offset(x: sweepRight ? geometry.size.width * 0.5 : -geometry.size.width * 0.5)
+                    .animation(.linear(duration: 12).repeatForever(autoreverses: false), value: sweepRight)
                 }
                 .clipped()
         }
@@ -1186,6 +1186,19 @@ private struct SettingsView: View {
                 .underline()
                 .foregroundStyle(Palette.paper)
                 .padding(.top, 48)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Meal counts in this app are tracked locally and are not connected to CalArts’ official dining or campus-card systems.")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Palette.paper)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("CalArts Meal Plan Counter is an independent app and is not affiliated with or endorsed by California Institute of the Arts, Bon Appétit, Illumia, or Transact. Meal plans, café hours, and menus may change; check official sources for current information.")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 32)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -1318,7 +1331,7 @@ private struct SemesterStartInput: View {
             }
             .buttonStyle(.plain)
 
-            Text("Shown in Record for the 140 Block Plan. Changing this date does not reset meals.")
+            Text("Shown in Meals for the 140 Block Plan. Changing this date does not reset meals.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Palette.muted)
         }
