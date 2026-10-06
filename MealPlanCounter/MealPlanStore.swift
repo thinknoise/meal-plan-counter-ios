@@ -19,8 +19,8 @@ final class MealPlanStore: ObservableObject {
         }
     }
 
-    func create(name: String, planType: MealPlanType) {
-        plan = MealPlan(name: name, planType: planType)
+    func create(name: String, planType: MealPlanType, term: MealPlanTerm) {
+        plan = MealPlan(name: name, planType: planType, term: term)
         save()
     }
 
@@ -72,12 +72,11 @@ final class MealPlanStore: ObservableObject {
         save()
     }
 
-    func updateSettings(name: String, planType: MealPlanType, semesterStartDate: Date?) {
+    func updateSettings(name: String, planType: MealPlanType, term: MealPlanTerm) {
         guard var current = plan else { return }
         let now = Date()
-        current.resetWeeklyIfNeeded(at: now)
-        current.updateSettings(name: name, planType: planType,
-                               semesterStartDate: semesterStartDate, at: now)
+        if current.planTerm == term { current.resetWeeklyIfNeeded(at: now) }
+        current.updateSettings(name: name, planType: planType, term: term, at: now)
         plan = current
         save()
     }
