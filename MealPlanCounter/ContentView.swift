@@ -455,7 +455,9 @@ private struct RecordRow: View {
             : record.tappedAt == nil ? .added : .edited)
         let actionDate = action == .tapped
             ? record.tappedAt ?? record.timestamp : record.recordedAt ?? record.timestamp
-        return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: "EEE, MMM d, h:mm a"))"
+        let pattern = Calendar.current.isDate(actionDate, inSameDayAs: record.timestamp)
+            ? "h:mm a" : "EEE, MMM d, h:mm a"
+        return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: pattern))"
     }
 
     private var accessibilityText: String {
