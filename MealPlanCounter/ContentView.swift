@@ -230,15 +230,6 @@ private struct CounterView: View {
                         .contentTransition(.numericText())
                         .padding(.top, 2)
 
-                    HStack(alignment: .bottom) {
-                        Eyebrow(plan.planType?.isWeekly == true
-                            ? "THIS WEEK: \(plan.totalMeals) MEALS"
-                            : "STARTED WITH: \(plan.totalMeals) MEALS")
-                        Spacer()
-                        Text("\(plan.usedMeals) USED")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    }
-
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
                             Rectangle().stroke(Palette.cyan, lineWidth: 2)
@@ -255,7 +246,9 @@ private struct CounterView: View {
                     HStack {
                         Eyebrow("\(plan.usedMeals) USED")
                         Spacer()
-                        Eyebrow("\(Int((plan.fractionUsed * 100).rounded()))% COMPLETE")
+                        Eyebrow(plan.planType?.isWeekly == true
+                            ? "THIS WEEK: \(plan.totalMeals) MEALS"
+                            : "STARTED WITH: \(plan.totalMeals) MEALS")
                     }
                     .padding(.top, 9)
 
