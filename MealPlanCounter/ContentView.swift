@@ -430,10 +430,8 @@ private struct RecordRow: View {
         }
     }
 
-    private var dateText: String {
-        if record.kind == .used {
-            return Self.format(record.timestamp, as: "h:mm a")
-        }
+    private var dateText: String? {
+        if record.kind == .used { return nil }
         if record.kind == .started {
             return Self.dayDateText(record.timestamp)
         }
@@ -442,11 +440,17 @@ private struct RecordRow: View {
 
     private var entryText: String? {
         guard record.kind == .used else { return nil }
-        if let recordedAt = record.recordedAt {
-            return "Recorded: \(Self.format(recordedAt, as: "EEE, MMM d, yyyy 'at' h:mm a"))"
-        }
-        // Earlier records have no action timestamp; treat their meal time as a tap.
-        return "Tapped: \(Self.format(record.tappedAt ?? record.timestamp, as: "EEE, MMM d, yyyy 'at' h:mm a"))"
+        let action = record.lastAction ?? (record.recordedAt == nil ? .tapped
+            : record.tappedAt == nil ? .added : .edited)
+        let actionDate = action == .tapped
+            ? record.tappedAt ?? record.timestamp : record.recordedAt ?? record.timestamp
+        return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: "EEE, MMM d, h:mm a"))"
+    }
+
+    private var accessibilityText: String {
+        [title, dateText, entryText, "\(record.remainingMeals) meals left"]
+            .compactMap { $0 }
+            .joined(separator: ", ")
     }
 
     static func resetDateText(_ date: Date) -> String {
@@ -470,9 +474,11 @@ private struct RecordRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(.system(size: 16, weight: .bold))
-                Text(dateText)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Palette.muted)
+                if let dateText {
+                    Text(dateText)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Palette.muted)
+                }
                 if let entryText {
                     Text(entryText)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -494,7 +500,7 @@ private struct RecordRow: View {
         .padding(.vertical, 18)
         .overlay(alignment: .top) { Palette.cyan.frame(height: 1) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(dateText), \(entryText.map { $0 + ", " } ?? "")\(record.remainingMeals) meals left")
+        .accessibilityLabel(accessibilityText)
     }
 }
 

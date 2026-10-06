@@ -76,6 +76,12 @@ struct MealRecord: Codable, Equatable, Identifiable {
         case reset
     }
 
+    enum EntryAction: String, Codable {
+        case tapped
+        case edited
+        case added
+    }
+
     let id: UUID
     var timestamp: Date
     var remainingMeals: Int
@@ -83,9 +89,10 @@ struct MealRecord: Codable, Equatable, Identifiable {
     var mealType: MealType?
     var tappedAt: Date?
     var recordedAt: Date?
+    var lastAction: EntryAction?
 
     init(kind: Kind, remainingMeals: Int, at timestamp: Date, mealType: MealType? = nil,
-         tappedAt: Date? = nil, recordedAt: Date? = nil) {
+         tappedAt: Date? = nil, recordedAt: Date? = nil, lastAction: EntryAction? = nil) {
         id = UUID()
         self.timestamp = timestamp
         self.remainingMeals = remainingMeals
@@ -93,6 +100,7 @@ struct MealRecord: Codable, Equatable, Identifiable {
         self.mealType = mealType
         self.tappedAt = tappedAt
         self.recordedAt = recordedAt
+        self.lastAction = lastAction
     }
 }
 
@@ -146,7 +154,7 @@ struct MealPlan: Codable, Equatable {
         }
         records.append(MealRecord(kind: .used, remainingMeals: remainingMeals, at: timestamp,
                                   mealType: MealType.inferred(at: timestamp, calendar: calendar),
-                                  tappedAt: timestamp))
+                                  tappedAt: timestamp, lastAction: .tapped))
         canUndoLastMeal = true
         return true
     }
@@ -157,6 +165,7 @@ struct MealPlan: Codable, Equatable {
         guard records[index].mealType != mealType else { return false }
         records[index].mealType = mealType
         records[index].recordedAt = editedAt
+        records[index].lastAction = .edited
         return true
     }
 
@@ -192,6 +201,7 @@ struct MealPlan: Codable, Equatable {
         replacement.timestamp = timestamp
         replacement.mealType = type
         replacement.recordedAt = now
+        replacement.lastAction = .edited
         guard updated.insertPastMeal(replacement, now: now, calendar: calendar) else { return false }
         self = updated
         return true
@@ -238,7 +248,7 @@ struct MealPlan: Codable, Equatable {
         resetWeeklyIfNeeded(at: now, calendar: calendar)
         guard planType != nil, timestamp <= now, timestamp >= currentPlanStart else { return false }
         let record = MealRecord(kind: .used, remainingMeals: 0,
-                                at: timestamp, mealType: type, recordedAt: now)
+                                at: timestamp, mealType: type, recordedAt: now, lastAction: .added)
         return insertPastMeal(record, now: now, calendar: calendar)
     }
 
