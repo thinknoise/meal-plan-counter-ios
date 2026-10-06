@@ -343,17 +343,16 @@ private struct RecordView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                BrandHeader()
-
-                Text("Meals")
-                    .font(.system(size: 39, weight: .black, design: .rounded))
-                    .tracking(-2)
-                    .padding(.top, 28)
+                HStack {
+                    BrandHeader()
+                    Spacer()
+                    HeaderTitle("Meals")
+                }
 
                 Text("A history of your plan balance, saved on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, 10)
+                    .padding(.top, 24)
 
                 if let weekStart = plan.currentWeeklyStart(at: .now) {
                     Eyebrow("THIS WEEK STARTED")
@@ -1131,20 +1130,17 @@ private struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                BrandHeader()
-
-                Text("Meal Plan Settings")
-                    .font(.system(size: 39, weight: .black, design: .rounded))
-                    .tracking(-2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .padding(.top, 28)
+                HStack {
+                    BrandHeader()
+                    Spacer()
+                    HeaderTitle("Settings")
+                }
 
                 Text("Choose your CalArts plan. Each tap uses one meal, and the count stays on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
                     .lineSpacing(4)
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, 13)
+                    .padding(.top, 24)
                     .padding(.bottom, 33)
 
                 LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
@@ -1329,6 +1325,20 @@ private struct BrandHeader: View {
             .aspectRatio(contentMode: .fit)
             .frame(width: 144, height: 55, alignment: .leading)
             .accessibilityLabel("CalArts")
+    }
+}
+
+private struct HeaderTitle: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 14, weight: .heavy, design: .rounded))
+            .padding(.horizontal, 12)
+            .frame(height: 55)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.cyan, lineWidth: 2))
     }
 }
 
