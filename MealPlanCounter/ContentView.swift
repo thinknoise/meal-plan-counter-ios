@@ -416,8 +416,7 @@ private struct RecordView: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showingAddMeal) {
-            AddMealSheet(earliestDate: plan.currentPlanStart,
-                         isWeekly: plan.planType?.isWeekly == true, addMeal: addMeal)
+            AddMealSheet(isWeekly: plan.planType?.isWeekly == true, addMeal: addMeal)
         }
         .sheet(item: $editingRecord) { record in
             EditMealSheet(record: record,
@@ -519,7 +518,6 @@ private struct RecordRow: View {
 
 private struct AddMealSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let earliestDate: Date
     let isWeekly: Bool
     let addMeal: (MealType, Date) -> Bool
 
@@ -529,7 +527,7 @@ private struct AddMealSheet: View {
     @State private var showingDatePicker = false
 
     private var dateRange: ClosedRange<Date> {
-        Calendar.current.startOfDay(for: earliestDate)...Date()
+        Date.distantPast...Date()
     }
 
     private var dateText: String {
@@ -602,7 +600,7 @@ private struct AddMealSheet: View {
                         .padding(.top, 11)
                 }
 
-                Text("Choose a date from when this plan began through today.")
+                Text("Choose any past date through today.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 5)
@@ -617,10 +615,6 @@ private struct AddMealSheet: View {
                 ActionButton(title: "Add meal", symbol: "plus") {
                     guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else {
                         errorMessage = "There is no closing time for this meal."
-                        return
-                    }
-                    guard closingDate >= earliestDate else {
-                        errorMessage = "This meal closed before the current plan began."
                         return
                     }
                     guard closingDate <= .now else {

@@ -90,9 +90,12 @@ struct MealRecord: Codable, Equatable, Identifiable {
     var tappedAt: Date?
     var recordedAt: Date?
     var lastAction: EntryAction?
+    // Preserve the original plan size when older meals change the tracking-start balance.
+    var startingAllowance: Int?
 
     init(kind: Kind, remainingMeals: Int, at timestamp: Date, mealType: MealType? = nil,
-         tappedAt: Date? = nil, recordedAt: Date? = nil, lastAction: EntryAction? = nil) {
+         tappedAt: Date? = nil, recordedAt: Date? = nil, lastAction: EntryAction? = nil,
+         startingAllowance: Int? = nil) {
         id = UUID()
         self.timestamp = timestamp
         self.remainingMeals = remainingMeals
@@ -101,6 +104,7 @@ struct MealRecord: Codable, Equatable, Identifiable {
         self.tappedAt = tappedAt
         self.recordedAt = recordedAt
         self.lastAction = lastAction
+        self.startingAllowance = startingAllowance
     }
 }
 
@@ -175,8 +179,10 @@ struct MealPlan: Codable, Equatable {
         let end = epochEndIndex(after: start)
         let latest = end == records.endIndex
             ? now : min(now, records[end].timestamp.addingTimeInterval(-1))
-        guard latest >= records[start].timestamp else { return nil }
-        return records[start].timestamp...latest
+        let earliest = start == records.firstIndex(where: { Self.startsPlan($0.kind) })
+            ? Date.distantPast : records[start].timestamp
+        guard latest >= earliest else { return nil }
+        return earliest...latest
     }
 
     func isWeeklyPeriod(for recordID: UUID) -> Bool {
@@ -221,6 +227,10 @@ struct MealPlan: Codable, Equatable {
             (affectedWeek.map { weekStart(for: records[later].timestamp, calendar: calendar) == $0 } ?? true) {
             records[later].remainingMeals += 1
         }
+        if index < start &&
+            (affectedWeek.map { weekStart(for: records[start].timestamp, calendar: calendar) == $0 } ?? true) {
+            records[start].remainingMeals += 1
+        }
 
         if start == currentEpochStartIndex {
             if let planType {
@@ -246,7 +256,7 @@ struct MealPlan: Codable, Equatable {
     mutating func addPastMeal(type: MealType, at timestamp: Date, now: Date = .now,
                               calendar: Calendar = .current) -> Bool {
         resetWeeklyIfNeeded(at: now, calendar: calendar)
-        guard planType != nil, timestamp <= now, timestamp >= currentPlanStart else { return false }
+        guard planType != nil, timestamp <= now else { return false }
         let record = MealRecord(kind: .used, remainingMeals: 0,
                                 at: timestamp, mealType: type, recordedAt: now, lastAction: .added)
         return insertPastMeal(record, now: now, calendar: calendar)
@@ -255,22 +265,25 @@ struct MealPlan: Codable, Equatable {
     private mutating func insertPastMeal(_ newRecord: MealRecord, now: Date,
                                          calendar: Calendar) -> Bool {
         let timestamp = newRecord.timestamp
-        guard timestamp <= now,
-              let start = records.lastIndex(where: {
-                  Self.startsPlan($0.kind) && $0.timestamp <= timestamp
-              }) else { return false }
+        guard timestamp <= now else { return false }
+        let start = records.lastIndex(where: {
+            Self.startsPlan($0.kind) && $0.timestamp <= timestamp
+        }) ?? records.firstIndex(where: { Self.startsPlan($0.kind) })
+        guard let start else { return false }
+        let beforeTracking = timestamp < records[start].timestamp
         let end = epochEndIndex(after: start)
         guard end == records.endIndex || timestamp < records[end].timestamp else { return false }
 
         let isWeekly = isWeeklyEpoch(start: start, end: end)
         let affectedWeek = isWeekly ? weekStart(for: timestamp, calendar: calendar) : nil
         let allowance = start == currentEpochStartIndex && records[start].kind != .imported
-            ? totalMeals : records[start].remainingMeals
-        let relevant = (start..<end).filter { index in
+            ? totalMeals : records[start].startingAllowance ?? records[start].remainingMeals
+        let periodStart = beforeTracking ? records.startIndex : start
+        let relevant = (periodStart..<end).filter { index in
             records[index].kind == .used &&
             (affectedWeek.map { weekStart(for: records[index].timestamp, calendar: calendar) == $0 } ?? true)
         }
-        let insertionIndex = ((start + 1)..<end).first {
+        let insertionIndex = ((beforeTracking ? records.startIndex : start + 1)..<end).first {
             records[$0].timestamp > timestamp ||
                 (records[$0].timestamp == timestamp && records[$0].kind == .used)
         } ?? end
@@ -286,6 +299,14 @@ struct MealPlan: Codable, Equatable {
 
         for index in relevant where index >= insertionIndex {
             records[index].remainingMeals -= 1
+        }
+        if beforeTracking {
+            if records[start].startingAllowance == nil {
+                records[start].startingAllowance = records[start].remainingMeals
+            }
+            if affectedWeek.map({ weekStart(for: records[start].timestamp, calendar: calendar) == $0 }) ?? true {
+                records[start].remainingMeals -= 1
+            }
         }
         var record = newRecord
         record.remainingMeals = balanceBeforeMeal - 1
@@ -315,7 +336,9 @@ struct MealPlan: Codable, Equatable {
     }
 
     private func epochStartIndex(containing index: Int) -> Int? {
+        // A backfilled meal before tracking belongs to the first plan period.
         records[...index].lastIndex(where: { Self.startsPlan($0.kind) })
+            ?? records.firstIndex(where: { Self.startsPlan($0.kind) })
     }
 
     private func epochEndIndex(after start: Int) -> Int {
@@ -330,12 +353,7 @@ struct MealPlan: Codable, Equatable {
         if records[start..<end].contains(where: { $0.kind == .reset }) { return true }
         // Older plan periods did not save their type; their starting allowance identifies official weekly plans.
         return records[start].kind != .imported &&
-            MealPlanType(weeklyMeals: records[start].remainingMeals) != nil
-    }
-
-    var currentPlanStart: Date {
-        records.last(where: { $0.kind == .started || $0.kind == .adjusted || $0.kind == .imported })?.timestamp
-            ?? records.first?.timestamp ?? .distantPast
+            MealPlanType(weeklyMeals: records[start].startingAllowance ?? records[start].remainingMeals) != nil
     }
 
     func nextWeeklyReset(after date: Date, calendar: Calendar = .current) -> Date? {
