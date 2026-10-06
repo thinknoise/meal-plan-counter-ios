@@ -122,14 +122,12 @@ private struct SetupView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     BrandHeader()
 
-                    Eyebrow("MEAL PLAN COUNTER")
-                        .padding(.top, 40)
                     Text("Meal Plan Counter")
-                        .font(.system(size: 56, weight: .black, design: .rounded))
+                        .font(.system(size: 40, weight: .black, design: .rounded))
                         .tracking(-3)
                         .lineSpacing(-8)
                         .minimumScaleFactor(0.7)
-                        .padding(.top, 15)
+                        .padding(.top, 40)
 
                     Text("A personal count of the meals in your plan. Kept right here on your iPhone.")
                         .font(.system(size: 15, weight: .medium))
