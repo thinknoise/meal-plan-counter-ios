@@ -129,7 +129,7 @@ private struct SetupView: View {
                         .minimumScaleFactor(0.7)
                         .padding(.top, 40)
 
-                    Text("A personal count of the meals in your plan. Kept right here on your iPhone.")
+                    Text("A personal counter for the Meal Plan at CalArts.")
                         .font(.system(size: 15, weight: .medium))
                         .lineSpacing(4)
                         .foregroundStyle(Palette.muted)
@@ -174,6 +174,19 @@ private struct SetupView: View {
                         .foregroundStyle(Palette.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 20)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Meal counts in this app are tracked locally and are not connected to CalArts’ official dining or campus-card systems.")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.paper)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("CalArts Meal Plan Counter is an independent app and is not affiliated with or endorsed by California Institute of the Arts, Bon Appétit, Illumia, or Transact. Meal plans, café hours, and menus may change; check official sources for current information.")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 40)
                 }
                 .padding(.horizontal, 27)
                 .padding(.top, 18)
