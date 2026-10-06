@@ -1335,7 +1335,10 @@ private struct HeaderTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 18, weight: .heavy, design: .rounded))
+            .font(.system(size: 34, weight: .heavy, design: .rounded))
+            .tracking(-1.5)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .frame(height: 55)
     }
 }
