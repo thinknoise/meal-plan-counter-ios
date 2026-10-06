@@ -434,7 +434,7 @@ private struct RecordRow: View {
     private var title: String {
         switch record.kind {
         case .started: "Tracking started"
-        case .used: "\(Self.dayDateText(record.timestamp)) · \(record.mealType?.rawValue ?? "Unassigned")"
+        case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d")) · \(record.mealType?.rawValue ?? "Unassigned")"
         case .adjusted: "Plan updated"
         case .imported: "Record started"
         case .reset: "Week reset"
