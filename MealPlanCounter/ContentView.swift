@@ -221,14 +221,15 @@ private struct CounterView: View {
                 .padding(.top, 24)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Eyebrow("MEALS LEFT")
-                    Text("\(plan.remainingMeals)")
-                        .font(.system(size: 100, weight: .black, design: .rounded))
-                        .tracking(-7)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .contentTransition(.numericText())
-                        .padding(.top, 2)
+                    HStack(alignment: .lastTextBaseline, spacing: 12) {
+                        Text("\(plan.remainingMeals)")
+                            .font(.system(size: 100, weight: .black, design: .rounded))
+                            .tracking(-7)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .contentTransition(.numericText())
+                        Eyebrow("MEALS LEFT")
+                    }
 
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
@@ -240,7 +241,7 @@ private struct CounterView: View {
                         }
                     }
                     .frame(height: 17)
-                    .padding(.top, 26)
+                    .padding(.top, 6)
                     .accessibilityLabel("\(plan.usedMeals) of \(plan.totalMeals) meals used")
 
                     HStack {
