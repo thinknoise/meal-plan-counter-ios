@@ -1335,10 +1335,8 @@ private struct HeaderTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 14, weight: .heavy, design: .rounded))
-            .padding(.horizontal, 12)
+            .font(.system(size: 18, weight: .heavy, design: .rounded))
             .frame(height: 55)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.cyan, lineWidth: 2))
     }
 }
 
