@@ -191,6 +191,31 @@ struct MealPlan: Codable, Equatable {
         return isWeeklyEpoch(start: start, end: epochEndIndex(after: start))
     }
 
+    func displayDate(for record: MealRecord, calendar: Calendar = .current) -> Date {
+        guard record.kind == .started,
+              let start = records.firstIndex(where: { $0.id == record.id }) else {
+            return record.timestamp
+        }
+
+        let end = epochEndIndex(after: start)
+        let earliestMeal = records[..<end]
+            .filter { $0.kind == .used }
+            .map(\.timestamp)
+            .min() ?? record.timestamp
+        let earliestDate = min(record.timestamp, earliestMeal)
+
+        if isWeeklyEpoch(start: start, end: end) {
+            return weekStart(for: earliestDate, calendar: calendar)
+        }
+        if start == currentEpochStartIndex, planType == .block140,
+           let semesterStartDate {
+            var cafeCalendar = Calendar(identifier: .gregorian)
+            cafeCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+            return cafeCalendar.startOfDay(for: min(semesterStartDate, earliestDate))
+        }
+        return calendar.startOfDay(for: earliestDate)
+    }
+
     @discardableResult
     mutating func editMeal(recordID: UUID, type: MealType, at timestamp: Date,
                            now: Date = .now, calendar: Calendar = .current) -> Bool {

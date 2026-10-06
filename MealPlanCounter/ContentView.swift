@@ -323,6 +323,24 @@ private struct RecordView: View {
     @State private var showingAddMeal = false
     @State private var editingRecord: MealRecord?
 
+    private var displayedRecords: [MealRecord] {
+        plan.records.enumerated().sorted { left, right in
+            let leftDate = plan.displayDate(for: left.element)
+            let rightDate = plan.displayDate(for: right.element)
+            return leftDate == rightDate ? left.offset > right.offset : leftDate > rightDate
+        }.map { $0.element }
+    }
+
+    private var currentPlanStartID: UUID? {
+        plan.records.last(where: {
+            $0.kind == .started || $0.kind == .adjusted || $0.kind == .imported
+        })?.id
+    }
+
+    private func isCurrentBlockStart(_ record: MealRecord) -> Bool {
+        record.kind == .started && record.id == currentPlanStartID && plan.planType == .block140
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -388,7 +406,7 @@ private struct RecordView: View {
                 .padding(.bottom, 12)
 
                 LazyVStack(spacing: 0) {
-                    ForEach(plan.records.reversed()) { record in
+                    ForEach(displayedRecords) { record in
                         if record.kind == .used {
                             Button { editingRecord = record } label: {
                                 RecordRow(record: record)
@@ -396,7 +414,12 @@ private struct RecordView: View {
                             .buttonStyle(.plain)
                             .accessibilityHint("Edit or remove meal")
                         } else {
-                            RecordRow(record: record)
+                            RecordRow(record: record,
+                                      startDate: record.kind == .started ? plan.displayDate(for: record) : nil,
+                                      needsSemesterStart: isCurrentBlockStart(record) &&
+                                          plan.semesterStartDate == nil,
+                                      startTimeZone: isCurrentBlockStart(record)
+                                          ? TimeZone(identifier: "America/Los_Angeles")! : .current)
                         }
                     }
                 }
@@ -429,10 +452,13 @@ private struct RecordView: View {
 
 private struct RecordRow: View {
     let record: MealRecord
+    var startDate: Date? = nil
+    var needsSemesterStart = false
+    var startTimeZone: TimeZone = .current
 
     private var title: String {
         switch record.kind {
-        case .started: "Tracking started"
+        case .started: "Plan started"
         case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d")) · \(record.mealType?.rawValue ?? "Unassigned")"
         case .adjusted: "Plan updated"
         case .imported: "Record started"
@@ -443,7 +469,8 @@ private struct RecordRow: View {
     private var dateText: String? {
         if record.kind == .used { return nil }
         if record.kind == .started {
-            return Self.dayDateText(record.timestamp)
+            if needsSemesterStart { return "Set semester start in Settings" }
+            return Self.dayDateText(startDate ?? record.timestamp, timeZone: startTimeZone)
         }
         return record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
     }
@@ -460,9 +487,13 @@ private struct RecordRow: View {
     }
 
     private var accessibilityText: String {
-        [title, dateText, entryText, "\(record.remainingMeals) meals left"]
+        [title, dateText, entryText, "\(displayedRemainingMeals) meals left"]
             .compactMap { $0 }
             .joined(separator: ", ")
+    }
+
+    private var displayedRemainingMeals: Int {
+        record.kind == .started ? record.startingAllowance ?? record.remainingMeals : record.remainingMeals
     }
 
     static func resetDateText(_ date: Date) -> String {
@@ -504,7 +535,7 @@ private struct RecordRow: View {
                     .foregroundStyle(Palette.cyan)
                     .accessibilityHidden(true)
             }
-            Text("\(record.remainingMeals)")
+            Text("\(displayedRemainingMeals)")
                 .font(.system(size: 29, weight: .black, design: .rounded))
                 .foregroundStyle(Palette.lime)
                 .monospacedDigit()
