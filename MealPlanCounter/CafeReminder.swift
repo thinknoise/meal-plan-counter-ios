@@ -126,10 +126,6 @@ final class CafeReminder: NSObject, ObservableObject {
             return
         }
 
-        guard CLLocationManager.locationServicesEnabled() else {
-            await synchronize(revision: expectedRevision)
-            return
-        }
         if locationManager.authorizationStatus == .notDetermined {
             statusMessage = "Waiting for location permission."
             locationManager.requestWhenInUseAuthorization()
@@ -163,16 +159,15 @@ final class CafeReminder: NSObject, ObservableObject {
             return
         }
 
-        guard CLLocationManager.locationServicesEnabled() else {
-            pause("Location Services are off. Turn them on in iPhone Settings to use this reminder.", openSettings: true)
-            return
-        }
         switch locationManager.authorizationStatus {
         case .notDetermined:
             pause("Turn this reminder off and on to allow location access.")
             return
-        case .denied, .restricted:
-            pause("Location access is off for CAMPc. Allow While Using the App in iPhone Settings to use this reminder.", openSettings: true)
+        case .denied:
+            pause("Location Services or CAMPc location access is off. Check iPhone Settings to use this reminder.", openSettings: true)
+            return
+        case .restricted:
+            pause("Location access is restricted. Check iPhone Settings to use this reminder.", openSettings: true)
             return
         case .authorizedWhenInUse, .authorizedAlways:
             break
