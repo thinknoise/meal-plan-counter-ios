@@ -4,6 +4,7 @@ import UIKit
 
 private enum Palette {
     static let indigo = Color(red: 13 / 255, green: 7 / 255, blue: 140 / 255)
+    static let sheetBlue = Color(red: 39 / 255, green: 51 / 255, blue: 181 / 255)
     static let paper = Color(red: 215 / 255, green: 255 / 255, blue: 254 / 255)
     static let cyan = Color(red: 0, green: 1, blue: 1)
     static let lime = Color(red: 0, green: 1, blue: 0)
@@ -680,7 +681,8 @@ private struct AddMealSheet: View {
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
-        .background(Palette.indigo)
+        .background(Palette.sheetBlue)
+        .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.medium, .large])
         .sheet(isPresented: $showingDatePicker) {
             MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
@@ -804,7 +806,8 @@ private struct EditMealSheet: View {
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
-        .background(Palette.indigo)
+        .background(Palette.sheetBlue)
+        .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.large])
         .onAppear {
             mealType = record.mealType ?? MealType.inferred(at: record.timestamp)
@@ -910,7 +913,8 @@ private struct MealDatePickerSheet: View {
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
-        .background(Palette.indigo)
+        .background(Palette.sheetBlue)
+        .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.medium, .large])
         .onAppear { displayedWeekStart = weekStart(for: selectedDate) }
     }
