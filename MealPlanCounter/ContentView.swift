@@ -10,6 +10,14 @@ private enum Palette {
     static let muted = Color(red: 157 / 255, green: 253 / 255, blue: 255 / 255)
 }
 
+private enum NameInput {
+    static let maximumCharacters = 33
+
+    static func limited(_ name: String) -> String {
+        String(name.prefix(maximumCharacters))
+    }
+}
+
 private enum Screen {
     case count
     case record
@@ -137,7 +145,10 @@ private struct SetupView: View {
                         .padding(.top, 23)
                         .padding(.bottom, 44)
 
-                    LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
+                    LabeledInput(label: "YOUR NAME", text: Binding(
+                        get: { name },
+                        set: { name = NameInput.limited($0) }
+                    ), placeholder: "Bob")
                         .focused($focusedField, equals: .name)
                         .textContentType(.givenName)
                         .submitLabel(.done)
@@ -1143,9 +1154,15 @@ private struct SettingsView: View {
                     .padding(.top, 24)
                     .padding(.bottom, 33)
 
-                LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
+                LabeledInput(label: "YOUR NAME", text: Binding(
+                    get: { name },
+                    set: { newName in
+                        let limitedName = NameInput.limited(newName)
+                        name = limitedName
+                        store.updateName(limitedName)
+                    }
+                ), placeholder: "Bob")
                     .textContentType(.givenName)
-                    .onChange(of: name) { _, newName in store.updateName(newName) }
 
                 Text("Name saves as you type.")
                     .font(.system(size: 12, weight: .medium))
