@@ -1081,7 +1081,7 @@ private struct CafeHoursSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("Steve’s Café")
+                    Text("Café Hours")
                         .font(.system(size: 32, weight: .black, design: .rounded))
                     Spacer()
                     Button("DONE") { dismiss() }
@@ -1089,8 +1089,19 @@ private struct CafeHoursSheet: View {
                 }
                 .padding(.bottom, 27)
 
+                Text("Steve’s Café")
+                    .font(.system(size: 21, weight: .black, design: .rounded))
+                    .padding(.bottom, 15)
                 serviceList("MON–FRI", services: CafeHours.weekdays)
                 serviceList("SAT–SUN", services: CafeHours.weekends)
+                    .padding(.top, 26)
+
+                Text("Tatum Lounge")
+                    .font(.system(size: 21, weight: .black, design: .rounded))
+                    .padding(.top, 34)
+                    .padding(.bottom, 15)
+                serviceList("MON–FRI", services: CafeHours.tatumWeekdays)
+                serviceList("SAT–SUN", services: CafeHours.tatumWeekends)
                     .padding(.top, 26)
 
                 Text("Regular weekly hours in Los Angeles time. Holidays and academic breaks may change service.")
@@ -1098,7 +1109,12 @@ private struct CafeHoursSheet: View {
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 28)
 
-                Link("CHECK TODAY’S HOURS & MENU ↗", destination: CafeHours.sourceURL)
+                Link("STEVE’S CURRENT HOURS & MENU ↗", destination: CafeHours.sourceURL)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Palette.lime)
+                    .padding(.top, 16)
+
+                Link("TATUM’S CURRENT HOURS & MENU ↗", destination: CafeHours.tatumSourceURL)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Palette.lime)
                     .padding(.top, 16)
