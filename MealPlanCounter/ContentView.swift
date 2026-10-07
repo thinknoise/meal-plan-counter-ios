@@ -4,10 +4,19 @@ import UIKit
 
 private enum Palette {
     static let indigo = Color(red: 13 / 255, green: 7 / 255, blue: 140 / 255)
+    static let sheetBlue = Color(red: 39 / 255, green: 51 / 255, blue: 181 / 255)
     static let paper = Color(red: 215 / 255, green: 255 / 255, blue: 254 / 255)
     static let cyan = Color(red: 0, green: 1, blue: 1)
     static let lime = Color(red: 0, green: 1, blue: 0)
     static let muted = Color(red: 157 / 255, green: 253 / 255, blue: 255 / 255)
+}
+
+private enum NameInput {
+    static let maximumCharacters = 33
+
+    static func limited(_ name: String) -> String {
+        String(name.prefix(maximumCharacters))
+    }
 }
 
 private enum Screen {
@@ -45,8 +54,8 @@ struct ContentView: View {
                     bottomBar
                 }
             } else {
-                SetupView { name, planType in
-                    store.create(name: name, planType: planType)
+                SetupView { name, planType, term in
+                    store.create(name: name, planType: planType, term: term)
                     screen = .count
                 }
             }
@@ -107,10 +116,11 @@ struct ContentView: View {
 }
 
 private struct SetupView: View {
-    let create: (String, MealPlanType) -> Void
+    let create: (String, MealPlanType, MealPlanTerm) -> Void
 
     @State private var name = "Bob"
     @State private var selectedPlan: MealPlanType?
+    @State private var selectedTerm = MealPlanTerm.containing(.now)
     @State private var showError = false
     @FocusState private var focusedField: Field?
 
@@ -122,29 +132,33 @@ private struct SetupView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     BrandHeader()
 
-                    Eyebrow("MEAL PLAN COUNTER")
-                        .padding(.top, 40)
                     Text("Meal Plan Counter")
-                        .font(.system(size: 56, weight: .black, design: .rounded))
+                        .font(.system(size: 40, weight: .black, design: .rounded))
                         .tracking(-3)
                         .lineSpacing(-8)
                         .minimumScaleFactor(0.7)
-                        .padding(.top, 15)
+                        .padding(.top, 40)
 
-                    Text("A personal count of the meals in your plan. Kept right here on your iPhone.")
+                    Text("A personal counter for the Meal Plan at CalArts.")
                         .font(.system(size: 15, weight: .medium))
                         .lineSpacing(4)
                         .foregroundStyle(Palette.muted)
                         .padding(.top, 23)
                         .padding(.bottom, 44)
 
-                    LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
+                    LabeledInput(label: "YOUR NAME", text: Binding(
+                        get: { name },
+                        set: { name = NameInput.limited($0) }
+                    ), placeholder: "Bob")
                         .focused($focusedField, equals: .name)
                         .textContentType(.givenName)
                         .submitLabel(.done)
                         .onSubmit { focusedField = nil }
 
                     PlanPicker(selection: $selectedPlan)
+                        .padding(.top, 20)
+
+                    TermPicker(selection: $selectedTerm)
                         .padding(.top, 20)
 
                     Text("Weekly plans refill on Sunday at local midnight. The 140 Block Plan counts down during the semester.")
@@ -166,7 +180,7 @@ private struct SetupView: View {
                             return
                         }
                         focusedField = nil
-                        create(trimmed, selectedPlan)
+                        create(trimmed, selectedPlan, selectedTerm)
                     }
                     .padding(.top, 25)
 
@@ -176,6 +190,19 @@ private struct SetupView: View {
                         .foregroundStyle(Palette.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 20)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Meal counts in this app are tracked locally and are not connected to CalArts’ official dining or campus-card systems.")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.paper)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("CalArts Meal Plan Counter is an independent app and is not affiliated with or endorsed by California Institute of the Arts, Bon Appétit, Illumia, or Transact. Meal plans, café hours, and menus may change; check official sources for current information.")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 40)
                 }
                 .padding(.horizontal, 27)
                 .padding(.top, 18)
@@ -221,22 +248,14 @@ private struct CounterView: View {
                 .padding(.top, 24)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Eyebrow("MEALS LEFT")
-                    Text("\(plan.remainingMeals)")
-                        .font(.system(size: 100, weight: .black, design: .rounded))
-                        .tracking(-7)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
-                        .contentTransition(.numericText())
-                        .padding(.top, 2)
-
-                    HStack(alignment: .bottom) {
-                        Eyebrow(plan.planType?.isWeekly == true
-                            ? "THIS WEEK: \(plan.totalMeals) MEALS"
-                            : "STARTED WITH: \(plan.totalMeals) MEALS")
-                        Spacer()
-                        Text("\(plan.usedMeals) USED")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    HStack(alignment: .lastTextBaseline, spacing: 12) {
+                        Text("\(plan.remainingMeals)")
+                            .font(.system(size: 100, weight: .black, design: .rounded))
+                            .tracking(-7)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .contentTransition(.numericText())
+                        Eyebrow("MEALS LEFT")
                     }
 
                     GeometryReader { proxy in
@@ -249,13 +268,15 @@ private struct CounterView: View {
                         }
                     }
                     .frame(height: 17)
-                    .padding(.top, 26)
+                    .padding(.top, 6)
                     .accessibilityLabel("\(plan.usedMeals) of \(plan.totalMeals) meals used")
 
                     HStack {
                         Eyebrow("\(plan.usedMeals) USED")
                         Spacer()
-                        Eyebrow("\(Int((plan.fractionUsed * 100).rounded()))% COMPLETE")
+                        Eyebrow(plan.planType?.isWeekly == true
+                            ? "THIS WEEK: \(plan.totalMeals) MEALS"
+                            : "STARTED WITH: \(plan.totalMeals) MEALS")
                     }
                     .padding(.top, 9)
 
@@ -276,8 +297,13 @@ private struct CounterView: View {
                 .overlay(alignment: .bottom) { Palette.cyan.frame(height: 2) }
                 .padding(.top, 35)
 
-                ActionButton(title: plan.remainingMeals == 0 ? "All meals used" : "Use 1 meal", symbol: "plus", isEnabled: plan.remainingMeals > 0) {
-                    withAnimation(.easeOut(duration: 0.2)) { useMeal() }
+                TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                    let hasStarted = timeline.date >= plan.planStartDate
+                    ActionButton(title: !hasStarted ? "Plan not started"
+                                 : plan.remainingMeals == 0 ? "All meals used" : "Use 1 meal",
+                                 symbol: "plus", isEnabled: hasStarted && plan.remainingMeals > 0) {
+                        withAnimation(.easeOut(duration: 0.2)) { useMeal() }
+                    }
                 }
                 .padding(.top, 30)
 
@@ -318,20 +344,27 @@ private struct RecordView: View {
     @State private var showingAddMeal = false
     @State private var editingRecord: MealRecord?
 
+    private var displayedRecords: [MealRecord] {
+        plan.records.enumerated().sorted { left, right in
+            let leftDate = plan.displayDate(for: left.element)
+            let rightDate = plan.displayDate(for: right.element)
+            return leftDate == rightDate ? left.offset > right.offset : leftDate > rightDate
+        }.map { $0.element }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                BrandHeader()
-
-                Text("Meals")
-                    .font(.system(size: 39, weight: .black, design: .rounded))
-                    .tracking(-2)
-                    .padding(.top, 28)
+                HStack {
+                    BrandHeader()
+                    Spacer()
+                    HeaderTitle("Meals")
+                }
 
                 Text("A history of your plan balance, saved on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, 10)
+                    .padding(.top, 24)
 
                 if let weekStart = plan.currentWeeklyStart(at: .now) {
                     Eyebrow("THIS WEEK STARTED")
@@ -344,9 +377,8 @@ private struct RecordView: View {
                     Eyebrow("SEMESTER START")
                         .foregroundStyle(Palette.cyan)
                         .padding(.top, 22)
-                    Text(plan.semesterStartDate.map {
-                        RecordRow.dayDateText($0, timeZone: TimeZone(identifier: "America/Los_Angeles")!)
-                    } ?? "Set the date in Settings")
+                    Text(RecordRow.dayDateText(plan.planStartDate,
+                                               timeZone: TimeZone(identifier: "America/Los_Angeles")!))
                         .font(.system(size: 14, weight: .semibold))
                         .padding(.top, 6)
                 }
@@ -361,15 +393,19 @@ private struct RecordView: View {
                 }
 
                 if plan.planType != nil {
-                    Button { showingAddMeal = true } label: {
-                        Label("ADD MEAL", systemImage: "plus")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .tracking(0.7)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 49)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                        if plan.planStartDate <= timeline.date {
+                            Button { showingAddMeal = true } label: {
+                                Label("ADD MEAL", systemImage: "plus")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .tracking(0.7)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 49)
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
                     .padding(.top, 24)
                 }
 
@@ -383,7 +419,7 @@ private struct RecordView: View {
                 .padding(.bottom, 12)
 
                 LazyVStack(spacing: 0) {
-                    ForEach(plan.records.reversed()) { record in
+                    ForEach(displayedRecords) { record in
                         if record.kind == .used {
                             Button { editingRecord = record } label: {
                                 RecordRow(record: record)
@@ -391,13 +427,17 @@ private struct RecordView: View {
                             .buttonStyle(.plain)
                             .accessibilityHint("Edit or remove meal")
                         } else {
-                            RecordRow(record: record)
+                            RecordRow(record: record,
+                                      startDate: record.kind == .started || plan.isTermStart(record)
+                                          ? plan.displayDate(for: record) : nil,
+                                      isTermStart: plan.isTermStart(record),
+                                      startTimeZone: TimeZone(identifier: "America/Los_Angeles")!)
                         }
                     }
                 }
 
-                if plan.records.first?.kind == .imported {
-                    Text("This plan was set up before meal records were added. Earlier meal uses have no saved timestamps. The first entry shows the balance when recording began.")
+                if plan.records.contains(where: { $0.kind == .imported }) {
+                    Text("This balance was saved before meal history was available. Earlier meal uses have no individual timestamps.")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -411,8 +451,8 @@ private struct RecordView: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showingAddMeal) {
-            AddMealSheet(earliestDate: plan.currentPlanStart,
-                         isWeekly: plan.planType?.isWeekly == true, addMeal: addMeal)
+            AddMealSheet(isWeekly: plan.planType?.isWeekly == true,
+                         earliestDate: plan.planStartDate, addMeal: addMeal)
         }
         .sheet(item: $editingRecord) { record in
             EditMealSheet(record: record,
@@ -425,34 +465,48 @@ private struct RecordView: View {
 
 private struct RecordRow: View {
     let record: MealRecord
+    var startDate: Date? = nil
+    var isTermStart = false
+    var startTimeZone: TimeZone = .current
 
     private var title: String {
         switch record.kind {
-        case .started: "Tracking started"
-        case .used: "\(Self.dayDateText(record.timestamp)) · \(record.mealType?.rawValue ?? "Unassigned")"
-        case .adjusted: "Plan updated"
-        case .imported: "Record started"
+        case .started: "Meal plan started"
+        case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d")) · \(record.mealType?.rawValue ?? "Unassigned")"
+        case .adjusted: isTermStart ? "\(record.planTerm?.title ?? "Meal plan") term started" : "Plan updated"
+        case .imported: "Starting balance"
         case .reset: "Week reset"
         }
     }
 
-    private var dateText: String {
-        if record.kind == .used {
-            return Self.format(record.timestamp, as: "h:mm a")
-        }
-        if record.kind == .started {
-            return Self.dayDateText(record.timestamp)
+    private var dateText: String? {
+        if record.kind == .used || record.kind == .imported { return nil }
+        if record.kind == .started || isTermStart {
+            return Self.dayDateText(startDate ?? record.timestamp, timeZone: startTimeZone)
         }
         return record.timestamp.formatted(.dateTime.year().month(.abbreviated).day().hour().minute())
     }
 
     private var entryText: String? {
         guard record.kind == .used else { return nil }
-        if let recordedAt = record.recordedAt {
-            return "Recorded: \(Self.format(recordedAt, as: "EEE, MMM d, yyyy 'at' h:mm a"))"
-        }
-        // Earlier records have no action timestamp; treat their meal time as a tap.
-        return "Tapped: \(Self.format(record.tappedAt ?? record.timestamp, as: "EEE, MMM d, yyyy 'at' h:mm a"))"
+        let action = record.lastAction ?? (record.recordedAt == nil ? .tapped
+            : record.tappedAt == nil ? .added : .edited)
+        let actionDate = action == .tapped
+            ? record.tappedAt ?? record.timestamp : record.recordedAt ?? record.timestamp
+        let pattern = Calendar.current.isDate(actionDate, inSameDayAs: record.timestamp)
+            ? "h:mm a" : "EEE, MMM d, h:mm a"
+        return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: pattern))"
+    }
+
+    private var accessibilityText: String {
+        [title, dateText, entryText, "\(displayedRemainingMeals) meals left"]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+    }
+
+    private var displayedRemainingMeals: Int {
+        record.kind == .started || isTermStart
+            ? record.startingAllowance ?? record.remainingMeals : record.remainingMeals
     }
 
     static func resetDateText(_ date: Date) -> String {
@@ -476,9 +530,11 @@ private struct RecordRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(.system(size: 16, weight: .bold))
-                Text(dateText)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Palette.muted)
+                if let dateText {
+                    Text(dateText)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Palette.muted)
+                }
                 if let entryText {
                     Text(entryText)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -492,7 +548,7 @@ private struct RecordRow: View {
                     .foregroundStyle(Palette.cyan)
                     .accessibilityHidden(true)
             }
-            Text("\(record.remainingMeals)")
+            Text("\(displayedRemainingMeals)")
                 .font(.system(size: 29, weight: .black, design: .rounded))
                 .foregroundStyle(Palette.lime)
                 .monospacedDigit()
@@ -500,14 +556,14 @@ private struct RecordRow: View {
         .padding(.vertical, 18)
         .overlay(alignment: .top) { Palette.cyan.frame(height: 1) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(dateText), \(entryText.map { $0 + ", " } ?? "")\(record.remainingMeals) meals left")
+        .accessibilityLabel(accessibilityText)
     }
 }
 
 private struct AddMealSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let earliestDate: Date
     let isWeekly: Bool
+    let earliestDate: Date
     let addMeal: (MealType, Date) -> Bool
 
     @State private var mealType = MealType.inferred(at: .now)
@@ -516,7 +572,7 @@ private struct AddMealSheet: View {
     @State private var showingDatePicker = false
 
     private var dateRange: ClosedRange<Date> {
-        Calendar.current.startOfDay(for: earliestDate)...Date()
+        earliestDate...Date()
     }
 
     private var dateText: String {
@@ -589,7 +645,7 @@ private struct AddMealSheet: View {
                         .padding(.top, 11)
                 }
 
-                Text("Choose a date from when this plan began through today.")
+                Text("Choose a date on or after \(RecordRow.dayDateText(earliestDate, timeZone: TimeZone(identifier: "America/Los_Angeles")!)).")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 5)
@@ -607,7 +663,7 @@ private struct AddMealSheet: View {
                         return
                     }
                     guard closingDate >= earliestDate else {
-                        errorMessage = "This meal closed before the current plan began."
+                        errorMessage = "Choose a date on or after the meal plan start."
                         return
                     }
                     guard closingDate <= .now else {
@@ -625,7 +681,8 @@ private struct AddMealSheet: View {
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
-        .background(Palette.indigo)
+        .background(Palette.sheetBlue)
+        .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.medium, .large])
         .sheet(isPresented: $showingDatePicker) {
             MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
@@ -749,7 +806,8 @@ private struct EditMealSheet: View {
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
-        .background(Palette.indigo)
+        .background(Palette.sheetBlue)
+        .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.large])
         .onAppear {
             mealType = record.mealType ?? MealType.inferred(at: record.timestamp)
@@ -855,7 +913,8 @@ private struct MealDatePickerSheet: View {
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
-        .background(Palette.indigo)
+        .background(Palette.sheetBlue)
+        .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.medium, .large])
         .onAppear { displayedWeekStart = weekStart(for: selectedDate) }
     }
@@ -1022,7 +1081,7 @@ private struct CafeHoursSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("Steve’s Café")
+                    Text("Café Hours")
                         .font(.system(size: 32, weight: .black, design: .rounded))
                     Spacer()
                     Button("DONE") { dismiss() }
@@ -1030,8 +1089,19 @@ private struct CafeHoursSheet: View {
                 }
                 .padding(.bottom, 27)
 
+                Text("Steve’s Café")
+                    .font(.system(size: 21, weight: .black, design: .rounded))
+                    .padding(.bottom, 15)
                 serviceList("MON–FRI", services: CafeHours.weekdays)
                 serviceList("SAT–SUN", services: CafeHours.weekends)
+                    .padding(.top, 26)
+
+                Text("Tatum Lounge")
+                    .font(.system(size: 21, weight: .black, design: .rounded))
+                    .padding(.top, 34)
+                    .padding(.bottom, 15)
+                serviceList("MON–FRI", services: CafeHours.tatumWeekdays)
+                serviceList("SAT–SUN", services: CafeHours.tatumWeekends)
                     .padding(.top, 26)
 
                 Text("Regular weekly hours in Los Angeles time. Holidays and academic breaks may change service.")
@@ -1039,7 +1109,12 @@ private struct CafeHoursSheet: View {
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 28)
 
-                Link("CHECK TODAY’S HOURS & MENU ↗", destination: CafeHours.sourceURL)
+                Link("STEVE’S CURRENT HOURS & MENU ↗", destination: CafeHours.sourceURL)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Palette.lime)
+                    .padding(.top, 16)
+
+                Link("TATUM’S CURRENT HOURS & MENU ↗", destination: CafeHours.tatumSourceURL)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(Palette.lime)
                     .padding(.top, 16)
@@ -1079,32 +1154,35 @@ private struct SettingsView: View {
 
     @State private var name = ""
     @State private var selectedPlan: MealPlanType?
-    @State private var semesterStartDate: Date?
+    @State private var selectedTerm = MealPlanTerm.containing(.now)
     @State private var showingClearConfirmation = false
     @State private var showingReminderExplanation = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                BrandHeader()
-
-                Text("Meal Plan Settings")
-                    .font(.system(size: 39, weight: .black, design: .rounded))
-                    .tracking(-2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-                    .padding(.top, 28)
+                HStack {
+                    BrandHeader()
+                    Spacer()
+                    HeaderTitle("Settings")
+                }
 
                 Text("Choose your CalArts plan. Each tap uses one meal, and the count stays on this iPhone.")
                     .font(.system(size: 15, weight: .medium))
                     .lineSpacing(4)
                     .foregroundStyle(Palette.muted)
-                    .padding(.top, 13)
+                    .padding(.top, 24)
                     .padding(.bottom, 33)
 
-                LabeledInput(label: "YOUR NAME", text: $name, placeholder: "Bob")
+                LabeledInput(label: "YOUR NAME", text: Binding(
+                    get: { name },
+                    set: { newName in
+                        let limitedName = NameInput.limited(newName)
+                        name = limitedName
+                        store.updateName(limitedName)
+                    }
+                ), placeholder: "Bob")
                     .textContentType(.givenName)
-                    .onChange(of: name) { _, newName in store.updateName(newName) }
 
                 Text("Name saves as you type.")
                     .font(.system(size: 12, weight: .medium))
@@ -1114,10 +1192,8 @@ private struct SettingsView: View {
                 PlanPicker(selection: $selectedPlan)
                     .padding(.top, 25)
 
-                if selectedPlan == .block140 {
-                    SemesterStartInput(date: $semesterStartDate)
-                        .padding(.top, 25)
-                }
+                TermPicker(selection: $selectedTerm)
+                    .padding(.top, 25)
 
                 Text(planExplanation)
                     .font(.system(size: 12, weight: .medium))
@@ -1251,21 +1327,12 @@ private struct SettingsView: View {
         guard let plan = store.plan else { return }
         name = plan.name
         selectedPlan = plan.planType
-        semesterStartDate = plan.semesterStartDate
+        selectedTerm = plan.planTerm
     }
 
     private var planSettingsChanged: Bool {
         guard let plan = store.plan, let selectedPlan else { return false }
-        guard selectedPlan == plan.planType else { return true }
-        guard selectedPlan == .block140 else { return false }
-        switch (semesterStartDate, plan.semesterStartDate) {
-        case (nil, nil): return false
-        case let (newDate?, savedDate?):
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-            return !calendar.isDate(newDate, inSameDayAs: savedDate)
-        default: return true
-        }
+        return selectedPlan != plan.planType || selectedTerm != plan.planTerm
     }
 
     private var planExplanation: String {
@@ -1275,105 +1342,15 @@ private struct SettingsView: View {
         let resetNote = selectedPlan.isWeekly
             ? "Weekly meals run Sunday through Saturday. Unused meals expire, and the count refills Sunday at local midnight."
             : "The 140 meals count down through the semester."
-        return selectedPlan == store.plan?.planType
+        return selectedPlan == store.plan?.planType && selectedTerm == store.plan?.planTerm
             ? resetNote
-            : resetNote + " Changing plans starts a new count at the full allowance."
+            : resetNote + " Changing the plan or term starts a new count at the full allowance."
     }
 
     private func save() {
         guard planSettingsChanged, let selectedPlan, let savedName = store.plan?.name else { return }
-        store.updateSettings(name: savedName, planType: selectedPlan,
-                             semesterStartDate: selectedPlan == .block140 ? semesterStartDate : nil)
+        store.updateSettings(name: savedName, planType: selectedPlan, term: selectedTerm)
         goBack()
-    }
-}
-
-private struct SemesterStartInput: View {
-    @Binding var date: Date?
-    @State private var pickerDate = Date()
-    @State private var showingPicker = false
-
-    private var localCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
-        return calendar
-    }
-
-    private var cafeCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        return calendar
-    }
-
-    private var dateText: String {
-        guard let date else { return "Choose semester start" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = cafeCalendar.timeZone
-        formatter.dateFormat = "EEEE, MMM d, yyyy"
-        return formatter.string(from: date)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Eyebrow("SEMESTER START")
-            Button(action: openPicker) {
-                HStack {
-                    Text(dateText)
-                        .font(.system(size: 16, weight: .semibold))
-                    Spacer(minLength: 6)
-                    Image(systemName: "calendar")
-                        .font(.system(size: 17, weight: .semibold))
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 55)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
-            }
-            .buttonStyle(.plain)
-
-            Text("Shown in Meals for the 140 Block Plan. Changing this date does not reset meals.")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Palette.muted)
-        }
-        .sheet(isPresented: $showingPicker) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Semester Start")
-                            .font(.system(size: 29, weight: .black, design: .rounded))
-                        Spacer()
-                        Button("DONE", action: savePickerDate)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    }
-
-                    DatePicker("Semester start date", selection: $pickerDate,
-                               in: ...Date(), displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                        .colorScheme(.dark)
-                        .padding(.top, 19)
-                }
-                .padding(24)
-            }
-            .foregroundStyle(Palette.paper)
-            .background(Palette.indigo)
-            .presentationDetents([.medium, .large])
-        }
-    }
-
-    private func openPicker() {
-        if let date {
-            let day = cafeCalendar.dateComponents([.year, .month, .day], from: date)
-            pickerDate = localCalendar.date(from: day) ?? .now
-        } else {
-            pickerDate = .now
-        }
-        showingPicker = true
-    }
-
-    private func savePickerDate() {
-        let day = localCalendar.dateComponents([.year, .month, .day], from: pickerDate)
-        date = cafeCalendar.date(from: day)
-        showingPicker = false
     }
 }
 
@@ -1385,6 +1362,21 @@ private struct BrandHeader: View {
             .aspectRatio(contentMode: .fit)
             .frame(width: 144, height: 55, alignment: .leading)
             .accessibilityLabel("CalArts")
+    }
+}
+
+private struct HeaderTitle: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 34, weight: .heavy, design: .rounded))
+            .tracking(-1.5)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .frame(height: 55)
     }
 }
 
@@ -1420,6 +1412,32 @@ private struct PlanPicker: View {
             .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
             .padding(.horizontal, 16)
             .overlay(Rectangle().stroke(Palette.cyan, lineWidth: 2))
+        }
+    }
+}
+
+private struct TermPicker: View {
+    @Binding var selection: MealPlanTerm
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow("MEAL PLAN TERM")
+            Picker("Meal Plan Term", selection: $selection) {
+                ForEach(MealPlanTerm.allCases) { term in
+                    Text(term.title).tag(term)
+                }
+            }
+            .pickerStyle(.menu)
+            .font(.system(size: 16, weight: .semibold))
+            .tint(Palette.paper)
+            .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
+            .padding(.horizontal, 16)
+            .overlay(Rectangle().stroke(Palette.cyan, lineWidth: 2))
+
+            Text("Meal plan begins \(RecordRow.dayDateText(selection.startDate, timeZone: TimeZone(identifier: "America/Los_Angeles")!)).")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

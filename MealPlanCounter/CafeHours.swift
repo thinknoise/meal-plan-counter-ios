@@ -15,9 +15,10 @@ struct CafeStatus: Equatable {
 }
 
 enum CafeHours {
-    // Regular weekly schedule published by Bon Appétit for CalArts Steve's Café.
+    // Regular weekly schedules published by Bon Appétit for CalArts dining.
     // Special hours and academic breaks can differ from this offline schedule.
     static let sourceURL = URL(string: "https://calarts.cafebonappetit.com/")!
+    static let tatumSourceURL = URL(string: "https://calarts.cafebonappetit.com/cafe/tatum/")!
 
     static let weekdays = [
         CafeService(name: "Breakfast", startMinute: 7 * 60 + 30, endMinute: 11 * 60 + 30, timeRange: "7:30–11:30 AM", openingTime: "7:30 AM"),
@@ -31,6 +32,16 @@ enum CafeHours {
         CafeService(name: "Breakfast", startMinute: 10 * 60, endMinute: 11 * 60 + 30, timeRange: "10–11:30 AM", openingTime: "10 AM"),
         CafeService(name: "Brunch", startMinute: 11 * 60 + 30, endMinute: 16 * 60, timeRange: "11:30 AM–4 PM", openingTime: "11:30 AM"),
         CafeService(name: "Late night", startMinute: 16 * 60, endMinute: 19 * 60, timeRange: "4–7 PM", openingTime: "4 PM")
+    ]
+
+    static let tatumWeekdays = [
+        CafeService(name: "Coffee bar", startMinute: 8 * 60 + 30, endMinute: 21 * 60 + 30,
+                    timeRange: "8:30 AM–9:30 PM", openingTime: "8:30 AM")
+    ]
+
+    static let tatumWeekends = [
+        CafeService(name: "Coffee bar", startMinute: 9 * 60 + 30, endMinute: 17 * 60,
+                    timeRange: "9:30 AM–5 PM", openingTime: "9:30 AM")
     ]
 
     static func closingDate(for mealType: MealType, on selectedDate: Date) -> Date? {
