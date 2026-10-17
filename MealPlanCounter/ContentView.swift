@@ -631,6 +631,7 @@ private struct AddMealSheet: View {
     let addMeal: (MealType, Date) -> Bool
 
     @State private var mealDate = Date()
+    @State private var mealType = CafeHours.mealPeriod(at: .now) ?? CafeHours.inferredMealPeriod(at: .now)
     @State private var mealTime = Date()
     @State private var errorMessage = ""
     @State private var showingDatePicker = false
@@ -645,6 +646,14 @@ private struct AddMealSheet: View {
 
     private var availability: MealEntryAvailability? {
         selectedTimestamp.map { plan.mealEntryAvailability(at: $0) }
+    }
+
+    private var timeMessage: (text: String, needsAttention: Bool)? {
+        guard let availability else { return nil }
+        if case let .available(period) = availability, period != mealType {
+            return ("That time is during \(period.rawValue). Choose a time for \(mealType.rawValue).", true)
+        }
+        return (availability.explanation, availability.needsAttention)
     }
 
     private var dateText: String {
@@ -690,6 +699,28 @@ private struct AddMealSheet: View {
                 .accessibilityLabel("Meal date, \(dateText)")
                 .padding(.top, 10)
 
+                Eyebrow("MEAL")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 27)
+                Menu {
+                    ForEach(MealType.allCases) { type in
+                        Button(type.rawValue) { mealType = type }
+                    }
+                } label: {
+                    HStack {
+                        Text(mealType.rawValue)
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 55)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                }
+                .accessibilityLabel("Meal, \(mealType.rawValue)")
+                .padding(.top, 10)
+
                 Eyebrow("TIME USED")
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 27)
@@ -701,10 +732,10 @@ private struct AddMealSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
                     .padding(.top, 10)
 
-                if let availability {
-                    Text(availability.explanation)
+                if let timeMessage {
+                    Text(timeMessage.text)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(availability.needsAttention ? Palette.lime : Palette.muted)
+                        .foregroundStyle(timeMessage.needsAttention ? Palette.lime : Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 11)
                 }
@@ -723,13 +754,17 @@ private struct AddMealSheet: View {
 
                 ActionButton(title: "Add meal", symbol: "plus", action: save)
                 .padding(.top, 27)
+                .padding(.bottom, 18)
             }
             .padding(24)
         }
         .foregroundStyle(Palette.paper)
         .background(Palette.sheetBlue)
         .presentationBackground(Palette.sheetBlue)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.fraction(0.78), .large])
+        .onAppear(perform: setSuggestedTime)
+        .onChange(of: mealDate) { _, _ in setSuggestedTime() }
+        .onChange(of: mealType) { _, _ in setSuggestedTime() }
         .sheet(isPresented: $showingDatePicker) {
             MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
                                 isWeekly: plan.planType?.isWeekly == true)
@@ -754,12 +789,23 @@ private struct AddMealSheet: View {
         case .outsideService, .alreadyRecorded:
             errorMessage = availability.explanation
         case .available(let period):
-            if addMeal(period, timestamp) {
+            guard period == mealType else {
+                errorMessage = "That time is during \(period.rawValue). Choose a time for \(mealType.rawValue)."
+                return
+            }
+            if addMeal(mealType, timestamp) {
                 dismiss()
             } else {
                 errorMessage = "There are no available meals left for that week or block."
             }
         }
+    }
+
+    private func setSuggestedTime() {
+        if let suggested = CafeHours.suggestedUsageTime(for: mealType, on: mealDate) {
+            mealTime = suggested
+        }
+        errorMessage = ""
     }
 }
 

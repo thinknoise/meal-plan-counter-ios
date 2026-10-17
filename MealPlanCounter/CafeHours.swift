@@ -69,6 +69,19 @@ enum CafeHours {
         cafeCalendar.isDate(first, inSameDayAs: second)
     }
 
+    static func suggestedUsageTime(for mealType: MealType, on selectedDate: Date) -> Date? {
+        let selectedDay = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+        guard let cafeDay = cafeCalendar.date(from: selectedDay),
+              let service = mealService(for: mealType, weekday: cafeCalendar.component(.weekday, from: cafeDay))
+        else { return nil }
+
+        var components = cafeCalendar.dateComponents([.year, .month, .day], from: cafeDay)
+        let suggestedMinute = service.startMinute + 30
+        components.hour = suggestedMinute / 60
+        components.minute = suggestedMinute % 60
+        return cafeCalendar.date(from: components)
+    }
+
     static func closingDate(for mealType: MealType, on selectedDate: Date) -> Date? {
         var localCalendar = Calendar(identifier: .gregorian)
         localCalendar.timeZone = .current
