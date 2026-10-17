@@ -259,13 +259,11 @@ struct MealPlan: Codable, Equatable {
     @discardableResult
     mutating func editMeal(recordID: UUID, type: MealType, at timestamp: Date,
                            now: Date = .now, calendar: Calendar = .current) -> Bool {
-        guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }),
+        guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }) else { return false }
+        if records[index].timestamp == timestamp { return true }
+        guard
               case let .available(period) = mealEntryAvailability(at: timestamp, excluding: recordID),
               period == type else { return false }
-        if records[index].timestamp == timestamp {
-            records[index].mealType = period
-            return true
-        }
         guard let allowedDates = editableDateRange(for: recordID, now: now),
               allowedDates.contains(timestamp) else { return false }
 

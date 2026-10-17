@@ -97,6 +97,18 @@ enum CafeHours {
         return cafeCalendar.date(from: components)
     }
 
+    static func pickerDate(for timestamp: Date) -> Date {
+        var components = cafeCalendar.dateComponents([.year, .month, .day], from: timestamp)
+        components.hour = 12
+        return deviceCalendar.date(from: components)!
+    }
+
+    static func isSameCafeMinute(_ first: Date, _ second: Date) -> Bool {
+        let firstTime = cafeCalendar.dateComponents([.hour, .minute], from: first)
+        let secondTime = cafeCalendar.dateComponents([.hour, .minute], from: second)
+        return firstTime.hour == secondTime.hour && firstTime.minute == secondTime.minute
+    }
+
     static func closingDate(for mealType: MealType, on selectedDate: Date) -> Date? {
         var localCalendar = Calendar(identifier: .gregorian)
         localCalendar.timeZone = .current

@@ -600,15 +600,6 @@ private struct RecordRow: View {
     }
 }
 
-private enum MealUsageInput {
-    static func timestamp(day: Date, time: Date) -> Date? {
-        let calendar = Calendar.current
-        return calendar.date(bySettingHour: calendar.component(.hour, from: time),
-                             minute: calendar.component(.minute, from: time),
-                             second: 0, of: day)
-    }
-}
-
 private extension MealEntryAvailability {
     var explanation: String {
         switch self {
@@ -630,14 +621,14 @@ private struct AddMealSheet: View {
     let plan: MealPlan
     let addMeal: (MealType, Date) -> Bool
 
-    @State private var mealDate = Date()
+    @State private var mealDate = CafeHours.pickerDate(for: .now)
     @State private var mealType = CafeHours.mealPeriod(at: .now) ?? CafeHours.inferredMealPeriod(at: .now)
     @State private var mealTime = Date()
     @State private var errorMessage = ""
     @State private var showingDatePicker = false
 
     private var dateRange: ClosedRange<Date> {
-        plan.planStartDate...Date()
+        CafeHours.pickerDate(for: plan.planStartDate)...CafeHours.pickerDate(for: .now)
     }
 
     private var selectedTimestamp: Date? {
@@ -826,7 +817,9 @@ private struct EditMealSheet: View {
     @State private var showingRemoveConfirmation = false
 
     private var dateRange: ClosedRange<Date> {
-        Calendar.current.startOfDay(for: editableDates.lowerBound)...editableDates.upperBound
+        let firstDay = CafeHours.pickerDate(for: editableDates.lowerBound)
+        let lastDay = CafeHours.pickerDate(for: editableDates.upperBound)
+        return Calendar.current.startOfDay(for: firstDay)...lastDay
     }
 
     private var dateText: String {
@@ -838,13 +831,11 @@ private struct EditMealSheet: View {
     }
 
     private var selectedTimestamp: Date? {
-        let calendar = Calendar.current
-        if calendar.isDate(mealDate, inSameDayAs: record.timestamp),
-           calendar.component(.hour, from: mealTime) == calendar.component(.hour, from: record.timestamp),
-           calendar.component(.minute, from: mealTime) == calendar.component(.minute, from: record.timestamp) {
+        if Calendar.current.isDate(mealDate, inSameDayAs: CafeHours.pickerDate(for: record.timestamp)),
+           CafeHours.isSameCafeMinute(mealTime, record.timestamp) {
             return record.timestamp
         }
-        return MealUsageInput.timestamp(day: mealDate, time: mealTime)
+        return CafeHours.usageTimestamp(on: mealDate, at: mealTime)
     }
 
     private var availability: MealEntryAvailability? {
@@ -892,6 +883,7 @@ private struct EditMealSheet: View {
                 DatePicker("Time used", selection: $mealTime, displayedComponents: .hourAndMinute)
                     .labelsHidden()
                     .datePickerStyle(.compact)
+                    .environment(\.timeZone, CafeHours.timeZone)
                     .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
                     .padding(.horizontal, 16)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
@@ -931,7 +923,7 @@ private struct EditMealSheet: View {
         .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.large])
         .onAppear {
-            mealDate = record.timestamp
+            mealDate = CafeHours.pickerDate(for: record.timestamp)
             mealTime = record.timestamp
         }
         .sheet(isPresented: $showingDatePicker) {
@@ -954,6 +946,10 @@ private struct EditMealSheet: View {
     private func save() {
         guard let timestamp = selectedTimestamp else {
             errorMessage = "Choose a valid meal date and time."
+            return
+        }
+        if timestamp == record.timestamp {
+            dismiss()
             return
         }
         guard let currentEditableDates = plan.editableDateRange(for: record.id, now: .now),
