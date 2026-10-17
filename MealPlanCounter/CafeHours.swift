@@ -51,6 +51,12 @@ enum CafeHours {
         return calendar
     }
 
+    private static var deviceCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
     static func mealPeriod(at date: Date) -> MealType? {
         let calendar = cafeCalendar
         let weekday = calendar.component(.weekday, from: date)
@@ -71,7 +77,7 @@ enum CafeHours {
     }
 
     static func suggestedUsageTime(for mealType: MealType, on selectedDate: Date) -> Date? {
-        let selectedDay = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+        let selectedDay = deviceCalendar.dateComponents([.year, .month, .day], from: selectedDate)
         guard let cafeDay = cafeCalendar.date(from: selectedDay),
               let service = mealService(for: mealType, weekday: cafeCalendar.component(.weekday, from: cafeDay))
         else { return nil }
@@ -84,7 +90,7 @@ enum CafeHours {
     }
 
     static func usageTimestamp(on selectedDate: Date, at cafeTime: Date) -> Date? {
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+        var components = deviceCalendar.dateComponents([.year, .month, .day], from: selectedDate)
         let time = cafeCalendar.dateComponents([.hour, .minute], from: cafeTime)
         components.hour = time.hour
         components.minute = time.minute
