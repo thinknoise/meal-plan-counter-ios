@@ -489,7 +489,7 @@ private struct RecordRow: View {
     private var title: String {
         switch record.kind {
         case .started: "Meal plan started"
-        case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d")) · \(record.mealType?.rawValue ?? "Unassigned")"
+        case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d", timeZone: CafeHours.timeZone)) · \(record.mealType?.rawValue ?? "Unassigned")"
         case .adjusted: isTermStart ? "\(record.planTerm?.title ?? "Meal plan") term started" : "Plan updated"
         case .imported: "Starting balance"
         case .reset: "Week reset"
@@ -521,16 +521,16 @@ private struct RecordRow: View {
             action = .tapped
             actionDate = record.timestamp
         }
-        let pattern = Calendar.current.isDate(actionDate, inSameDayAs: record.timestamp)
+        let pattern = CafeHours.isSameMealDay(actionDate, record.timestamp)
             ? "h:mm a" : "EEE, MMM d, h:mm a"
-        return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: pattern))"
+        return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: pattern, timeZone: CafeHours.timeZone))"
     }
 
     private var usageText: String? {
         guard record.kind == .used else { return nil }
         // A direct tap already shows the usage time; show a separate time when it differs.
         if record.tappedAt == record.timestamp { return nil }
-        return "Used: \(Self.format(record.timestamp, as: "h:mm a"))"
+        return "Used: \(Self.format(record.timestamp, as: "h:mm a", timeZone: CafeHours.timeZone))"
     }
 
     private var accessibilityText: String {
@@ -712,7 +712,7 @@ private struct AddMealSheet: View {
                 .accessibilityLabel("Meal, \(mealType.rawValue)")
                 .padding(.top, 10)
 
-                Eyebrow("TIME USED")
+                Eyebrow("TIME USED · CALARTS TIME")
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 27)
                 DatePicker("Time used", selection: $mealTime, displayedComponents: .hourAndMinute)
@@ -877,7 +877,7 @@ private struct EditMealSheet: View {
                 .accessibilityLabel("Meal date, \(dateText)")
                 .padding(.top, 10)
 
-                Eyebrow("TIME USED")
+                Eyebrow("TIME USED · CALARTS TIME")
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 27)
                 DatePicker("Time used", selection: $mealTime, displayedComponents: .hourAndMinute)
