@@ -44,6 +44,31 @@ enum CafeHours {
                     timeRange: "9:30 AM–5 PM", openingTime: "9:30 AM")
     ]
 
+    private static var cafeCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        return calendar
+    }
+
+    static func mealPeriod(at date: Date) -> MealType? {
+        let calendar = cafeCalendar
+        let weekday = calendar.component(.weekday, from: date)
+        let minute = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        guard services(for: weekday).contains(where: {
+            minute >= $0.startMinute && minute < $0.endMinute
+        }) else { return nil }
+        // The existing inference assigns weekday grill service to lunch and late night to dinner.
+        return inferredMealPeriod(at: date)
+    }
+
+    static func inferredMealPeriod(at date: Date) -> MealType {
+        MealType.inferred(at: date, calendar: cafeCalendar)
+    }
+
+    static func isSameMealDay(_ first: Date, _ second: Date) -> Bool {
+        cafeCalendar.isDate(first, inSameDayAs: second)
+    }
+
     static func closingDate(for mealType: MealType, on selectedDate: Date) -> Date? {
         var localCalendar = Calendar(identifier: .gregorian)
         localCalendar.timeZone = .current

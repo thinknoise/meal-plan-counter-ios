@@ -39,7 +39,8 @@ struct ContentView: View {
                     Group {
                         switch screen {
                         case .count:
-                            CounterView(plan: plan, useMeal: store.useMeal, undoMeal: store.undoLastMeal) {
+                            CounterView(plan: plan, useMeal: store.useMeal,
+                                        addMeal: store.addPastMeal, undoMeal: store.undoLastMeal) {
                                 screen = .settings
                             }
                         case .record:
@@ -219,8 +220,11 @@ private struct SetupView: View {
 private struct CounterView: View {
     let plan: MealPlan
     let useMeal: () -> Void
+    let addMeal: (MealType, Date) -> Bool
     let undoMeal: () -> Void
     let openSettings: () -> Void
+
+    @State private var showingAddMeal = false
 
     var body: some View {
         ScrollView {
@@ -299,10 +303,21 @@ private struct CounterView: View {
 
                 TimelineView(.periodic(from: .now, by: 60)) { timeline in
                     let hasStarted = timeline.date >= plan.planStartDate
+                    let availability = plan.mealEntryAvailability(at: timeline.date)
+                    let needsManualEntry = availability.needsAttention
                     ActionButton(title: !hasStarted ? "Plan not started"
+                                 : availability == .outsideService ? "Add Meal Manually"
+                                 : needsManualEntry ? "Already Used · Add Meal"
                                  : plan.remainingMeals == 0 ? "All meals used" : "Use 1 meal",
-                                 symbol: "plus", isEnabled: hasStarted && plan.remainingMeals > 0) {
-                        withAnimation(.easeOut(duration: 0.2)) { useMeal() }
+                                 symbol: needsManualEntry ? "square.and.pencil" : "plus",
+                                 isEnabled: hasStarted && (needsManualEntry || plan.remainingMeals > 0),
+                                 highlight: needsManualEntry ? Palette.cyan : Palette.lime) {
+                        switch plan.mealEntryAvailability(at: .now) {
+                        case .available:
+                            withAnimation(.easeOut(duration: 0.2)) { useMeal() }
+                        case .outsideService, .alreadyRecorded:
+                            showingAddMeal = true
+                        }
                     }
                 }
                 .padding(.top, 30)
@@ -331,6 +346,9 @@ private struct CounterView: View {
             .padding(.bottom, 30)
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
+        }
+        .sheet(isPresented: $showingAddMeal) {
+            AddMealSheet(plan: plan, addMeal: addMeal)
         }
     }
 }
@@ -451,11 +469,10 @@ private struct RecordView: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showingAddMeal) {
-            AddMealSheet(isWeekly: plan.planType?.isWeekly == true,
-                         earliestDate: plan.planStartDate, addMeal: addMeal)
+            AddMealSheet(plan: plan, addMeal: addMeal)
         }
         .sheet(item: $editingRecord) { record in
-            EditMealSheet(record: record,
+            EditMealSheet(plan: plan, record: record,
                           editableDates: plan.editableDateRange(for: record.id) ?? record.timestamp...record.timestamp,
                           isWeekly: plan.isWeeklyPeriod(for: record.id),
                           editMeal: editMeal, removeMeal: removeMeal)
@@ -489,17 +506,35 @@ private struct RecordRow: View {
 
     private var entryText: String? {
         guard record.kind == .used else { return nil }
-        let action = record.lastAction ?? (record.recordedAt == nil ? .tapped
-            : record.tappedAt == nil ? .added : .edited)
-        let actionDate = action == .tapped
-            ? record.tappedAt ?? record.timestamp : record.recordedAt ?? record.timestamp
+        let action: MealRecord.EntryAction
+        let actionDate: Date
+        if let tappedAt = record.tappedAt {
+            action = .tapped
+            actionDate = tappedAt
+        } else if record.lastAction == .added ||
+                    (record.lastAction == nil && record.recordedAt != nil) {
+            action = .added
+            actionDate = record.recordedAt ?? record.timestamp
+        } else if record.lastAction == .edited {
+            return nil
+        } else {
+            action = .tapped
+            actionDate = record.timestamp
+        }
         let pattern = Calendar.current.isDate(actionDate, inSameDayAs: record.timestamp)
             ? "h:mm a" : "EEE, MMM d, h:mm a"
         return "\(action.rawValue.capitalized): \(Self.format(actionDate, as: pattern))"
     }
 
+    private var usageText: String? {
+        guard record.kind == .used else { return nil }
+        // A direct tap already shows the usage time; show a separate time when it differs.
+        if record.tappedAt == record.timestamp { return nil }
+        return "Used: \(Self.format(record.timestamp, as: "h:mm a"))"
+    }
+
     private var accessibilityText: String {
-        [title, dateText, entryText, "\(displayedRemainingMeals) meals left"]
+        [title, dateText, usageText, entryText, "\(displayedRemainingMeals) meals left"]
             .compactMap { $0 }
             .joined(separator: ", ")
     }
@@ -535,6 +570,11 @@ private struct RecordRow: View {
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Palette.muted)
                 }
+                if let usageText {
+                    Text(usageText)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Palette.muted)
+                }
                 if let entryText {
                     Text(entryText)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -560,19 +600,51 @@ private struct RecordRow: View {
     }
 }
 
+private enum MealUsageInput {
+    static func timestamp(day: Date, time: Date) -> Date? {
+        let calendar = Calendar.current
+        return calendar.date(bySettingHour: calendar.component(.hour, from: time),
+                             minute: calendar.component(.minute, from: time),
+                             second: 0, of: day)
+    }
+}
+
+private extension MealEntryAvailability {
+    var explanation: String {
+        switch self {
+        case .available(let period): "Meal period: \(period.rawValue)."
+        case .outsideService: "Choose a time during Steve’s Café service."
+        case .alreadyRecorded(let period):
+            "\(period.rawValue) already has a meal recorded for this date. Choose another time or date."
+        }
+    }
+
+    var needsAttention: Bool {
+        if case .available = self { return false }
+        return true
+    }
+}
+
 private struct AddMealSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let isWeekly: Bool
-    let earliestDate: Date
+    let plan: MealPlan
     let addMeal: (MealType, Date) -> Bool
 
-    @State private var mealType = MealType.inferred(at: .now)
     @State private var mealDate = Date()
+    @State private var mealTime = Date()
     @State private var errorMessage = ""
     @State private var showingDatePicker = false
 
     private var dateRange: ClosedRange<Date> {
-        earliestDate...Date()
+        plan.planStartDate...Date()
+    }
+
+    private var selectedTimestamp: Date? {
+        MealUsageInput.timestamp(day: mealDate, time: mealTime)
+    }
+
+    private var availability: MealEntryAvailability? {
+        selectedTimestamp.map { plan.mealEntryAvailability(at: $0) }
     }
 
     private var dateText: String {
@@ -581,15 +653,6 @@ private struct AddMealSheet: View {
         formatter.timeZone = .current
         formatter.dateFormat = "EEE, MMM d"
         return formatter.string(from: mealDate)
-    }
-
-    private var closingTimeText: String? {
-        guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: closingDate)
     }
 
     var body: some View {
@@ -603,25 +666,14 @@ private struct AddMealSheet: View {
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                 }
 
-                Text("Record a meal you forgot to count. Choose the meal and date.")
+                Text("Record a meal you forgot to count. Choose when you used it.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 12)
 
-                Eyebrow("MEAL")
-                    .foregroundStyle(Palette.cyan)
-                    .padding(.top, 28)
-                Picker("Meal type", selection: $mealType) {
-                    ForEach(MealType.allCases) { type in
-                        Text(type.rawValue).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.top, 10)
-
                 Eyebrow("DATE")
                     .foregroundStyle(Palette.cyan)
-                    .padding(.top, 27)
+                    .padding(.top, 28)
                 Button { showingDatePicker = true } label: {
                     HStack {
                         Text(dateText)
@@ -638,14 +690,26 @@ private struct AddMealSheet: View {
                 .accessibilityLabel("Meal date, \(dateText)")
                 .padding(.top, 10)
 
-                if let closingTimeText {
-                    Text("Recorded at the café’s regular \(closingTimeText) closing time. Holidays may differ.")
+                Eyebrow("TIME USED")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 27)
+                DatePicker("Time used", selection: $mealTime, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                    .padding(.top, 10)
+
+                if let availability {
+                    Text(availability.explanation)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.muted)
+                        .foregroundStyle(availability.needsAttention ? Palette.lime : Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 11)
                 }
 
-                Text("Choose a date on or after \(RecordRow.dayDateText(earliestDate, timeZone: TimeZone(identifier: "America/Los_Angeles")!)).")
+                Text("Choose a date on or after \(RecordRow.dayDateText(plan.planStartDate, timeZone: TimeZone(identifier: "America/Los_Angeles")!)).")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 5)
@@ -657,25 +721,7 @@ private struct AddMealSheet: View {
                         .padding(.top, 17)
                 }
 
-                ActionButton(title: "Add meal", symbol: "plus") {
-                    guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else {
-                        errorMessage = "There is no closing time for this meal."
-                        return
-                    }
-                    guard closingDate >= earliestDate else {
-                        errorMessage = "Choose a date on or after the meal plan start."
-                        return
-                    }
-                    guard closingDate <= .now else {
-                        errorMessage = "Add this meal after its café closing time."
-                        return
-                    }
-                    if addMeal(mealType, closingDate) {
-                        dismiss()
-                    } else {
-                        errorMessage = "There are no available meals left for that week or block."
-                    }
-                }
+                ActionButton(title: "Add meal", symbol: "plus", action: save)
                 .padding(.top, 27)
             }
             .padding(24)
@@ -686,21 +732,48 @@ private struct AddMealSheet: View {
         .presentationDetents([.medium, .large])
         .sheet(isPresented: $showingDatePicker) {
             MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
-                                isWeekly: isWeekly)
+                                isWeekly: plan.planType?.isWeekly == true)
+        }
+    }
+
+    private func save() {
+        guard let timestamp = selectedTimestamp else {
+            errorMessage = "Choose a valid meal date and time."
+            return
+        }
+        guard timestamp >= plan.planStartDate else {
+            errorMessage = "Choose a date on or after the meal plan start."
+            return
+        }
+        guard timestamp <= .now else {
+            errorMessage = "Choose a meal time that has already passed."
+            return
+        }
+        let availability = plan.mealEntryAvailability(at: timestamp)
+        switch availability {
+        case .outsideService, .alreadyRecorded:
+            errorMessage = availability.explanation
+        case .available(let period):
+            if addMeal(period, timestamp) {
+                dismiss()
+            } else {
+                errorMessage = "There are no available meals left for that week or block."
+            }
         }
     }
 }
 
 private struct EditMealSheet: View {
     @Environment(\.dismiss) private var dismiss
+    let plan: MealPlan
     let record: MealRecord
     let editableDates: ClosedRange<Date>
     let isWeekly: Bool
     let editMeal: (UUID, MealType, Date) -> Bool
     let removeMeal: (UUID) -> Bool
 
-    @State private var mealType: MealType = .lunch
     @State private var mealDate = Date()
+    @State private var mealTime = Date()
     @State private var errorMessage = ""
     @State private var showingDatePicker = false
     @State private var showingRemoveConfirmation = false
@@ -717,18 +790,18 @@ private struct EditMealSheet: View {
         return formatter.string(from: mealDate)
     }
 
-    private var usesClosingTime: Bool {
-        !Calendar.current.isDate(mealDate, inSameDayAs: record.timestamp)
+    private var selectedTimestamp: Date? {
+        let calendar = Calendar.current
+        if calendar.isDate(mealDate, inSameDayAs: record.timestamp),
+           calendar.component(.hour, from: mealTime) == calendar.component(.hour, from: record.timestamp),
+           calendar.component(.minute, from: mealTime) == calendar.component(.minute, from: record.timestamp) {
+            return record.timestamp
+        }
+        return MealUsageInput.timestamp(day: mealDate, time: mealTime)
     }
 
-    private var closingTimeText: String? {
-        guard usesClosingTime,
-              let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: closingDate)
+    private var availability: MealEntryAvailability? {
+        selectedTimestamp.map { plan.mealEntryAvailability(at: $0, excluding: record.id) }
     }
 
     var body: some View {
@@ -742,25 +815,14 @@ private struct EditMealSheet: View {
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                 }
 
-                Text("Change the meal type or date, or remove this meal from your record.")
+                Text("Change when the meal was used, or remove it from your record.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 13)
 
-                Eyebrow("MEAL TYPE")
-                    .foregroundStyle(Palette.cyan)
-                    .padding(.top, 29)
-                Picker("Meal type", selection: $mealType) {
-                    ForEach(MealType.allCases) { type in
-                        Text(type.rawValue).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding(.top, 10)
-
                 Eyebrow("DATE")
                     .foregroundStyle(Palette.cyan)
-                    .padding(.top, 27)
+                    .padding(.top, 29)
                 Button { showingDatePicker = true } label: {
                     HStack {
                         Text(dateText)
@@ -777,10 +839,22 @@ private struct EditMealSheet: View {
                 .accessibilityLabel("Meal date, \(dateText)")
                 .padding(.top, 10)
 
-                if let closingTimeText {
-                    Text("The changed meal will use the café’s regular \(closingTimeText) closing time. Holidays may differ.")
+                Eyebrow("TIME USED")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 27)
+                DatePicker("Time used", selection: $mealTime, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                    .padding(.top, 10)
+
+                if let availability {
+                    Text(availability.explanation)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.muted)
+                        .foregroundStyle(availability.needsAttention ? Palette.lime : Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 11)
                 }
 
@@ -810,8 +884,8 @@ private struct EditMealSheet: View {
         .presentationBackground(Palette.sheetBlue)
         .presentationDetents([.large])
         .onAppear {
-            mealType = record.mealType ?? MealType.inferred(at: record.timestamp)
             mealDate = record.timestamp
+            mealTime = record.timestamp
         }
         .sheet(isPresented: $showingDatePicker) {
             MealDatePickerSheet(selectedDate: $mealDate, allowedDates: dateRange,
@@ -831,28 +905,28 @@ private struct EditMealSheet: View {
     }
 
     private func save() {
-        let timestamp: Date
-        if usesClosingTime {
-            guard let closingDate = CafeHours.closingDate(for: mealType, on: mealDate) else {
-                errorMessage = "There is no closing time for this meal."
-                return
-            }
-            guard editableDates.contains(closingDate) else {
-                errorMessage = "Choose a meal date within this plan period."
-                return
-            }
-            guard closingDate <= .now else {
-                errorMessage = "Save this meal after its café closing time."
-                return
-            }
-            timestamp = closingDate
-        } else {
-            timestamp = record.timestamp
+        guard let timestamp = selectedTimestamp else {
+            errorMessage = "Choose a valid meal date and time."
+            return
         }
-        if editMeal(record.id, mealType, timestamp) {
-            dismiss()
-        } else {
-            errorMessage = "That week or block has no available meals for this date."
+        guard editableDates.contains(timestamp) else {
+            errorMessage = "Choose a meal date and time within this plan period."
+            return
+        }
+        guard timestamp <= .now else {
+            errorMessage = "Choose a meal time that has already passed."
+            return
+        }
+        let availability = plan.mealEntryAvailability(at: timestamp, excluding: record.id)
+        switch availability {
+        case .outsideService, .alreadyRecorded:
+            errorMessage = availability.explanation
+        case .available(let period):
+            if editMeal(record.id, period, timestamp) {
+                dismiss()
+            } else {
+                errorMessage = "That week or block has no available meals for this date."
+            }
         }
     }
 }
@@ -1465,6 +1539,7 @@ private struct ActionButton: View {
     let title: String
     let symbol: String
     var isEnabled = true
+    var highlight = Palette.lime
     let action: () -> Void
 
     var body: some View {
@@ -1479,7 +1554,7 @@ private struct ActionButton: View {
             .foregroundStyle(Palette.indigo)
             .padding(.horizontal, 21)
             .frame(height: 61)
-            .background(isEnabled ? Palette.lime : Palette.muted)
+            .background(isEnabled ? highlight : Palette.muted)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
