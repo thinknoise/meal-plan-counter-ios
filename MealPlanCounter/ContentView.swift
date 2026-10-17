@@ -641,7 +641,7 @@ private struct AddMealSheet: View {
     }
 
     private var selectedTimestamp: Date? {
-        MealUsageInput.timestamp(day: mealDate, time: mealTime)
+        CafeHours.usageTimestamp(on: mealDate, at: mealTime)
     }
 
     private var availability: MealEntryAvailability? {
@@ -727,6 +727,7 @@ private struct AddMealSheet: View {
                 DatePicker("Time used", selection: $mealTime, displayedComponents: .hourAndMinute)
                     .labelsHidden()
                     .datePickerStyle(.compact)
+                    .environment(\.timeZone, CafeHours.timeZone)
                     .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
                     .padding(.horizontal, 16)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
@@ -955,7 +956,8 @@ private struct EditMealSheet: View {
             errorMessage = "Choose a valid meal date and time."
             return
         }
-        guard editableDates.contains(timestamp) else {
+        guard let currentEditableDates = plan.editableDateRange(for: record.id, now: .now),
+              currentEditableDates.contains(timestamp) else {
             errorMessage = "Choose a meal date and time within this plan period."
             return
         }

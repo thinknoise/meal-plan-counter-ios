@@ -19,6 +19,7 @@ enum CafeHours {
     // Special hours and academic breaks can differ from this offline schedule.
     static let sourceURL = URL(string: "https://calarts.cafebonappetit.com/")!
     static let tatumSourceURL = URL(string: "https://calarts.cafebonappetit.com/cafe/tatum/")!
+    static let timeZone = TimeZone(identifier: "America/Los_Angeles")!
 
     static let weekdays = [
         CafeService(name: "Breakfast", startMinute: 7 * 60 + 30, endMinute: 11 * 60 + 30, timeRange: "7:30–11:30 AM", openingTime: "7:30 AM"),
@@ -46,7 +47,7 @@ enum CafeHours {
 
     private static var cafeCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        calendar.timeZone = timeZone
         return calendar
     }
 
@@ -79,6 +80,14 @@ enum CafeHours {
         let suggestedMinute = service.startMinute + 30
         components.hour = suggestedMinute / 60
         components.minute = suggestedMinute % 60
+        return cafeCalendar.date(from: components)
+    }
+
+    static func usageTimestamp(on selectedDate: Date, at cafeTime: Date) -> Date? {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+        let time = cafeCalendar.dateComponents([.hour, .minute], from: cafeTime)
+        components.hour = time.hour
+        components.minute = time.minute
         return cafeCalendar.date(from: components)
     }
 

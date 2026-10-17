@@ -272,6 +272,11 @@ struct MealPlan: Codable, Equatable {
         var updated = self
         var replacement = records[index]
         guard updated.removeMeal(recordID: recordID, now: now, calendar: calendar) else { return false }
+        if replacement.tappedAt == nil && replacement.recordedAt == nil &&
+            (replacement.lastAction == nil || replacement.lastAction == .tapped) {
+            replacement.tappedAt = replacement.timestamp
+            replacement.lastAction = .tapped
+        }
         replacement.timestamp = timestamp
         replacement.mealType = period
         guard updated.insertPastMeal(replacement, now: now, calendar: calendar) else { return false }
