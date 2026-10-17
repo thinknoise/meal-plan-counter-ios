@@ -40,7 +40,8 @@ struct ContentView: View {
                         switch screen {
                         case .count:
                             CounterView(plan: plan, useMeal: store.useMeal,
-                                        addMeal: store.addPastMeal, undoMeal: store.undoLastMeal) {
+                                        addMeal: store.addPastMeal, undoMeal: store.undoLastMeal,
+                                        openMeals: { screen = .record }) {
                                 screen = .settings
                             }
                         case .record:
@@ -222,9 +223,11 @@ private struct CounterView: View {
     let useMeal: () -> Void
     let addMeal: (MealType, Date) -> Bool
     let undoMeal: () -> Void
+    let openMeals: () -> Void
     let openSettings: () -> Void
 
     @State private var showingAddMeal = false
+    @State private var addedMeal = false
 
     var body: some View {
         ScrollView {
@@ -354,8 +357,13 @@ private struct CounterView: View {
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
         }
-        .sheet(isPresented: $showingAddMeal) {
-            AddMealSheet(plan: plan, addMeal: addMeal)
+        .sheet(isPresented: $showingAddMeal, onDismiss: {
+            if addedMeal {
+                addedMeal = false
+                openMeals()
+            }
+        }) {
+            AddMealSheet(plan: plan, addMeal: addMeal) { addedMeal = true }
         }
     }
 }
@@ -476,7 +484,7 @@ private struct RecordView: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showingAddMeal) {
-            AddMealSheet(plan: plan, addMeal: addMeal)
+            AddMealSheet(plan: plan, addMeal: addMeal) { }
         }
         .sheet(item: $editingRecord) { record in
             EditMealSheet(plan: plan, record: record,
@@ -627,6 +635,7 @@ private struct AddMealSheet: View {
     @Environment(\.dismiss) private var dismiss
     let plan: MealPlan
     let addMeal: (MealType, Date) -> Bool
+    let onAdded: () -> Void
 
     @State private var mealDate = CafeHours.pickerDate(for: .now)
     @State private var mealType = CafeHours.mealPeriod(at: .now) ?? CafeHours.inferredMealPeriod(at: .now)
@@ -793,6 +802,7 @@ private struct AddMealSheet: View {
                 return
             }
             if addMeal(mealType, timestamp) {
+                onAdded()
                 dismiss()
             } else {
                 errorMessage = "There are no available meals left for that week or block."
