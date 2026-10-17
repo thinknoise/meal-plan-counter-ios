@@ -305,18 +305,25 @@ private struct CounterView: View {
                     let hasStarted = timeline.date >= plan.planStartDate
                     let availability = plan.mealEntryAvailability(at: timeline.date)
                     let needsManualEntry = availability.needsAttention
+                    let needsPlanSelection = needsManualEntry && plan.planType == nil
                     ActionButton(title: !hasStarted ? "Plan not started"
+                                 : needsPlanSelection ? "Choose a Meal Plan"
                                  : availability == .outsideService ? "Add Meal Manually"
                                  : needsManualEntry ? "Already Used · Add Meal"
                                  : plan.remainingMeals == 0 ? "All meals used" : "Use 1 meal",
-                                 symbol: needsManualEntry ? "square.and.pencil" : "plus",
+                                 symbol: needsPlanSelection ? "gearshape"
+                                     : needsManualEntry ? "square.and.pencil" : "plus",
                                  isEnabled: hasStarted && (needsManualEntry || plan.remainingMeals > 0),
                                  highlight: needsManualEntry ? Palette.cyan : Palette.lime) {
                         switch plan.mealEntryAvailability(at: .now) {
                         case .available:
                             withAnimation(.easeOut(duration: 0.2)) { useMeal() }
                         case .outsideService, .alreadyRecorded:
-                            showingAddMeal = true
+                            if plan.planType == nil {
+                                openSettings()
+                            } else {
+                                showingAddMeal = true
+                            }
                         }
                     }
                 }
