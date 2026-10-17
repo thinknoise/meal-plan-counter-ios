@@ -75,9 +75,19 @@ enum MealPlanTerm: String, Codable, CaseIterable, Identifiable {
 enum MealType: String, Codable, CaseIterable, Identifiable {
     case breakfast = "Breakfast"
     case lunch = "Lunch"
+    case grillOnly = "Grill Only"
     case dinner = "Dinner"
+    case lateNight = "Late Night"
 
     var id: String { rawValue }
+
+    enum GlutenFreeAvailability { case available, unavailable, unknown }
+
+    // Update dining eligibility and GF reports here as they are verified.
+    var isEligibleForMealPlan: Bool { true }
+    var glutenFreeAvailability: GlutenFreeAvailability {
+        self == .lateNight ? .unavailable : .unknown
+    }
 
     static func inferred(at date: Date, calendar: Calendar = .current) -> MealType {
         let minute = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
@@ -91,9 +101,10 @@ enum MealType: String, Codable, CaseIterable, Identifiable {
         // Outside regular service, use the surrounding meal boundaries as a default.
         if let breakfast = services.first(where: { $0.mealType == .breakfast }),
            minute < breakfast.service.endMinute { return .breakfast }
-        if let dinner = services.first(where: { $0.mealType == .dinner }),
-           minute < dinner.service.startMinute { return .lunch }
-        return .dinner
+        if let next = services.first(where: { minute < $0.service.startMinute }) {
+            return next.mealType
+        }
+        return services.last?.mealType ?? .dinner
     }
 }
 
@@ -187,13 +198,30 @@ struct MealPlan: Codable, Equatable {
     var fractionUsed: Double { Double(usedMeals) / Double(totalMeals) }
 
     func mealEntryAvailability(at timestamp: Date, excluding recordID: UUID? = nil) -> MealEntryAvailability {
-        guard let period = CafeHours.mealPeriod(at: timestamp) else { return .outsideService }
+        guard let period = CafeHours.mealPeriod(at: timestamp), period.isEligibleForMealPlan else {
+            return .outsideService
+        }
+        // Historical duplicates may be edited within their existing date and period.
+        if let recordID, let original = records.first(where: { $0.id == recordID && $0.kind == .used }),
+           CafeHours.isSameMealDay(original.timestamp, timestamp),
+           effectivePeriod(for: original) == period {
+            return .available(period)
+        }
         let alreadyRecorded = records.contains { record in
             record.kind == .used && record.id != recordID &&
                 CafeHours.isSameMealDay(record.timestamp, timestamp) &&
-                (record.mealType ?? CafeHours.inferredMealPeriod(at: record.timestamp)) == period
+                effectivePeriod(for: record) == period
         }
         return alreadyRecorded ? .alreadyRecorded(period) : .available(period)
+    }
+
+    func effectivePeriod(for record: MealRecord) -> MealType {
+        let scheduled = CafeHours.mealPeriod(at: record.timestamp)
+        // Old builds saved weekday Grill Only as Lunch and Late Night as Dinner.
+        // Interpret those entries for collision checks without changing saved history.
+        if record.mealType == .lunch && scheduled == .grillOnly { return .grillOnly }
+        if record.mealType == .dinner && scheduled == .lateNight { return .lateNight }
+        return record.mealType ?? scheduled ?? CafeHours.inferredMealPeriod(at: record.timestamp)
     }
 
     @discardableResult
@@ -260,7 +288,7 @@ struct MealPlan: Codable, Equatable {
     mutating func editMeal(recordID: UUID, type: MealType, at timestamp: Date,
                            now: Date = .now, calendar: Calendar = .current) -> Bool {
         guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }) else { return false }
-        if records[index].timestamp == timestamp { return true }
+        if records[index].timestamp == timestamp && records[index].mealType == type { return true }
         guard
               case let .available(period) = mealEntryAvailability(at: timestamp, excluding: recordID),
               period == type else { return false }
@@ -269,6 +297,8 @@ struct MealPlan: Codable, Equatable {
 
         var updated = self
         var replacement = records[index]
+        let staysInOriginalPeriod = CafeHours.isSameMealDay(replacement.timestamp, timestamp) &&
+            effectivePeriod(for: replacement) == period
         guard updated.removeMeal(recordID: recordID, now: now, calendar: calendar) else { return false }
         if replacement.tappedAt == nil && replacement.recordedAt == nil &&
             (replacement.lastAction == nil || replacement.lastAction == .tapped) {
@@ -277,7 +307,8 @@ struct MealPlan: Codable, Equatable {
         }
         replacement.timestamp = timestamp
         replacement.mealType = period
-        guard updated.insertPastMeal(replacement, now: now, calendar: calendar) else { return false }
+        guard updated.insertPastMeal(replacement, now: now, calendar: calendar,
+                                     allowingExistingConflict: staysInOriginalPeriod) else { return false }
         self = updated
         return true
     }
@@ -334,11 +365,14 @@ struct MealPlan: Codable, Equatable {
     }
 
     private mutating func insertPastMeal(_ newRecord: MealRecord, now: Date,
-                                         calendar: Calendar) -> Bool {
+                                         calendar: Calendar,
+                                         allowingExistingConflict: Bool = false) -> Bool {
         let timestamp = newRecord.timestamp
-        guard timestamp <= now,
-              case let .available(period) = mealEntryAvailability(at: timestamp),
-              newRecord.mealType == period else { return false }
+        guard timestamp <= now, let period = CafeHours.mealPeriod(at: timestamp),
+              period.isEligibleForMealPlan, newRecord.mealType == period else { return false }
+        if !allowingExistingConflict {
+            guard case .available = mealEntryAvailability(at: timestamp) else { return false }
+        }
         let start = records.lastIndex(where: {
             Self.startsPlan($0.kind) &&
                 ($0.timestamp <= timestamp || (isTermStart($0) && displayDate(for: $0) <= timestamp))

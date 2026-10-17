@@ -12,6 +12,8 @@ struct CafeStatus: Equatable {
     let isOpen: Bool
     let headline: String
     let detail: String
+    var mealType: MealType? = nil
+    var serviceName: String? = nil
 }
 
 enum CafeHours {
@@ -61,11 +63,9 @@ enum CafeHours {
         let calendar = cafeCalendar
         let weekday = calendar.component(.weekday, from: date)
         let minute = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
-        guard services(for: weekday).contains(where: {
-            minute >= $0.startMinute && minute < $0.endMinute
-        }) else { return nil }
-        // The existing inference assigns weekday grill service to lunch and late night to dinner.
-        return inferredMealPeriod(at: date)
+        return mealServices(for: weekday).first(where: {
+            minute >= $0.service.startMinute && minute < $0.service.endMinute
+        })?.mealType
     }
 
     static func inferredMealPeriod(at date: Date) -> MealType {
@@ -135,7 +135,9 @@ enum CafeHours {
         let todaysServices = services(for: weekday)
 
         if let current = todaysServices.first(where: { minute >= $0.startMinute && minute < $0.endMinute }) {
-            return CafeStatus(isOpen: true, headline: "Open now · \(current.name)", detail: current.timeRange)
+            return CafeStatus(isOpen: true, headline: "Open now · \(current.name)",
+                              detail: current.timeRange, mealType: mealType(for: current),
+                              serviceName: current.name)
         }
 
         if let next = todaysServices.first(where: { minute < $0.startMinute }) {
@@ -154,20 +156,24 @@ enum CafeHours {
     }
 
     static func mealServices(for weekday: Int) -> [(mealType: MealType, service: CafeService)] {
-        MealType.allCases.compactMap { mealType in
-            guard let service = mealService(for: mealType, weekday: weekday) else { return nil }
+        services(for: weekday).compactMap { service in
+            guard let mealType = mealType(for: service) else { return nil }
             return (mealType, service)
         }
     }
 
-    private static func mealService(for mealType: MealType, weekday: Int) -> CafeService? {
-        let isWeekend = weekday == 1 || weekday == 7
-        let serviceName: String
-        switch mealType {
-        case .breakfast: serviceName = "Breakfast"
-        case .lunch: serviceName = isWeekend ? "Brunch" : "Lunch"
-        case .dinner: serviceName = isWeekend ? "Late night" : "Dinner"
+    static func mealType(for service: CafeService) -> MealType? {
+        switch service.name {
+        case "Breakfast": .breakfast
+        case "Lunch", "Brunch": .lunch
+        case "Grill only": .grillOnly
+        case "Dinner": .dinner
+        case "Late night": .lateNight
+        default: nil
         }
-        return services(for: weekday).first(where: { $0.name == serviceName })
+    }
+
+    private static func mealService(for mealType: MealType, weekday: Int) -> CafeService? {
+        mealServices(for: weekday).first(where: { $0.mealType == mealType })?.service
     }
 }
