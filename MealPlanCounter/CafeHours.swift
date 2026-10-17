@@ -19,6 +19,7 @@ enum CafeHours {
     // Special hours and academic breaks can differ from this offline schedule.
     static let sourceURL = URL(string: "https://calarts.cafebonappetit.com/")!
     static let tatumSourceURL = URL(string: "https://calarts.cafebonappetit.com/cafe/tatum/")!
+    static let timeZone = TimeZone(identifier: "America/Los_Angeles")!
 
     static let weekdays = [
         CafeService(name: "Breakfast", startMinute: 7 * 60 + 30, endMinute: 11 * 60 + 30, timeRange: "7:30–11:30 AM", openingTime: "7:30 AM"),
@@ -43,6 +44,70 @@ enum CafeHours {
         CafeService(name: "Coffee bar", startMinute: 9 * 60 + 30, endMinute: 17 * 60,
                     timeRange: "9:30 AM–5 PM", openingTime: "9:30 AM")
     ]
+
+    private static var cafeCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
+    }
+
+    private static var deviceCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
+    static func mealPeriod(at date: Date) -> MealType? {
+        let calendar = cafeCalendar
+        let weekday = calendar.component(.weekday, from: date)
+        let minute = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        guard services(for: weekday).contains(where: {
+            minute >= $0.startMinute && minute < $0.endMinute
+        }) else { return nil }
+        // The existing inference assigns weekday grill service to lunch and late night to dinner.
+        return inferredMealPeriod(at: date)
+    }
+
+    static func inferredMealPeriod(at date: Date) -> MealType {
+        MealType.inferred(at: date, calendar: cafeCalendar)
+    }
+
+    static func isSameMealDay(_ first: Date, _ second: Date) -> Bool {
+        cafeCalendar.isDate(first, inSameDayAs: second)
+    }
+
+    static func suggestedUsageTime(for mealType: MealType, on selectedDate: Date) -> Date? {
+        let selectedDay = deviceCalendar.dateComponents([.year, .month, .day], from: selectedDate)
+        guard let cafeDay = cafeCalendar.date(from: selectedDay),
+              let service = mealService(for: mealType, weekday: cafeCalendar.component(.weekday, from: cafeDay))
+        else { return nil }
+
+        var components = cafeCalendar.dateComponents([.year, .month, .day], from: cafeDay)
+        let suggestedMinute = service.startMinute + 30
+        components.hour = suggestedMinute / 60
+        components.minute = suggestedMinute % 60
+        return cafeCalendar.date(from: components)
+    }
+
+    static func usageTimestamp(on selectedDate: Date, at cafeTime: Date) -> Date? {
+        var components = deviceCalendar.dateComponents([.year, .month, .day], from: selectedDate)
+        let time = cafeCalendar.dateComponents([.hour, .minute], from: cafeTime)
+        components.hour = time.hour
+        components.minute = time.minute
+        return cafeCalendar.date(from: components)
+    }
+
+    static func pickerDate(for timestamp: Date) -> Date {
+        var components = cafeCalendar.dateComponents([.year, .month, .day], from: timestamp)
+        components.hour = 12
+        return deviceCalendar.date(from: components)!
+    }
+
+    static func isSameCafeMinute(_ first: Date, _ second: Date) -> Bool {
+        let firstTime = cafeCalendar.dateComponents([.hour, .minute], from: first)
+        let secondTime = cafeCalendar.dateComponents([.hour, .minute], from: second)
+        return firstTime.hour == secondTime.hour && firstTime.minute == secondTime.minute
+    }
 
     static func closingDate(for mealType: MealType, on selectedDate: Date) -> Date? {
         var localCalendar = Calendar(identifier: .gregorian)

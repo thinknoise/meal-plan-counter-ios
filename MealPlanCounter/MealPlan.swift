@@ -140,6 +140,12 @@ struct MealRecord: Codable, Equatable, Identifiable {
     }
 }
 
+enum MealEntryAvailability: Equatable {
+    case available(MealType)
+    case outsideService
+    case alreadyRecorded(MealType)
+}
+
 struct MealPlan: Codable, Equatable {
     var name: String
     var planType: MealPlanType?
@@ -180,11 +186,22 @@ struct MealPlan: Codable, Equatable {
     var remainingMeals: Int { totalMeals - usedMeals }
     var fractionUsed: Double { Double(usedMeals) / Double(totalMeals) }
 
+    func mealEntryAvailability(at timestamp: Date, excluding recordID: UUID? = nil) -> MealEntryAvailability {
+        guard let period = CafeHours.mealPeriod(at: timestamp) else { return .outsideService }
+        let alreadyRecorded = records.contains { record in
+            record.kind == .used && record.id != recordID &&
+                CafeHours.isSameMealDay(record.timestamp, timestamp) &&
+                (record.mealType ?? CafeHours.inferredMealPeriod(at: record.timestamp)) == period
+        }
+        return alreadyRecorded ? .alreadyRecorded(period) : .available(period)
+    }
+
     @discardableResult
     mutating func useMeal(at timestamp: Date = .now, calendar: Calendar = .current) -> Bool {
         guard timestamp >= planStartDate else { return false }
         resetWeeklyIfNeeded(at: timestamp, calendar: calendar)
-        guard remainingMeals > 0 else { return false }
+        guard remainingMeals > 0,
+              case let .available(mealType) = mealEntryAvailability(at: timestamp) else { return false }
         if let planType {
             if planType.isWeekly {
                 weeklyUsedMeals += 1
@@ -195,19 +212,9 @@ struct MealPlan: Codable, Equatable {
             legacyUsedMeals += 1
         }
         records.append(MealRecord(kind: .used, remainingMeals: remainingMeals, at: timestamp,
-                                  mealType: MealType.inferred(at: timestamp, calendar: calendar),
+                                  mealType: mealType,
                                   tappedAt: timestamp, lastAction: .tapped))
         canUndoLastMeal = true
-        return true
-    }
-
-    mutating func updateMealType(for recordID: UUID, to mealType: MealType,
-                                 at editedAt: Date = .now) -> Bool {
-        guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }) else { return false }
-        guard records[index].mealType != mealType else { return false }
-        records[index].mealType = mealType
-        records[index].recordedAt = editedAt
-        records[index].lastAction = .edited
         return true
     }
 
@@ -253,19 +260,23 @@ struct MealPlan: Codable, Equatable {
     mutating func editMeal(recordID: UUID, type: MealType, at timestamp: Date,
                            now: Date = .now, calendar: Calendar = .current) -> Bool {
         guard let index = records.firstIndex(where: { $0.id == recordID && $0.kind == .used }) else { return false }
-        if records[index].timestamp == timestamp {
-            return records[index].mealType == type || updateMealType(for: recordID, to: type, at: now)
-        }
+        if records[index].timestamp == timestamp { return true }
+        guard
+              case let .available(period) = mealEntryAvailability(at: timestamp, excluding: recordID),
+              period == type else { return false }
         guard let allowedDates = editableDateRange(for: recordID, now: now),
               allowedDates.contains(timestamp) else { return false }
 
         var updated = self
         var replacement = records[index]
         guard updated.removeMeal(recordID: recordID, now: now, calendar: calendar) else { return false }
+        if replacement.tappedAt == nil && replacement.recordedAt == nil &&
+            (replacement.lastAction == nil || replacement.lastAction == .tapped) {
+            replacement.tappedAt = replacement.timestamp
+            replacement.lastAction = .tapped
+        }
         replacement.timestamp = timestamp
-        replacement.mealType = type
-        replacement.recordedAt = now
-        replacement.lastAction = .edited
+        replacement.mealType = period
         guard updated.insertPastMeal(replacement, now: now, calendar: calendar) else { return false }
         self = updated
         return true
@@ -314,16 +325,20 @@ struct MealPlan: Codable, Equatable {
     mutating func addPastMeal(type: MealType, at timestamp: Date, now: Date = .now,
                               calendar: Calendar = .current) -> Bool {
         resetWeeklyIfNeeded(at: now, calendar: calendar)
-        guard planType != nil, timestamp >= planStartDate, timestamp <= now else { return false }
+        guard planType != nil, timestamp >= planStartDate, timestamp <= now,
+              case let .available(period) = mealEntryAvailability(at: timestamp),
+              period == type else { return false }
         let record = MealRecord(kind: .used, remainingMeals: 0,
-                                at: timestamp, mealType: type, recordedAt: now, lastAction: .added)
+                                at: timestamp, mealType: period, recordedAt: now, lastAction: .added)
         return insertPastMeal(record, now: now, calendar: calendar)
     }
 
     private mutating func insertPastMeal(_ newRecord: MealRecord, now: Date,
                                          calendar: Calendar) -> Bool {
         let timestamp = newRecord.timestamp
-        guard timestamp <= now else { return false }
+        guard timestamp <= now,
+              case let .available(period) = mealEntryAvailability(at: timestamp),
+              newRecord.mealType == period else { return false }
         let start = records.lastIndex(where: {
             Self.startsPlan($0.kind) &&
                 ($0.timestamp <= timestamp || (isTermStart($0) && displayDate(for: $0) <= timestamp))
