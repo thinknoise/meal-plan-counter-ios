@@ -11,6 +11,32 @@ private enum Palette {
     static let muted = Color(red: 157 / 255, green: 253 / 255, blue: 255 / 255)
 }
 
+private struct MealPeriodLabel: View {
+    let period: MealType
+    var name: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text(name ?? period.rawValue)
+            if period.glutenFreeAvailability == .available {
+                Text("GF")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Palette.cyan.opacity(0.18), in: RoundedRectangle(cornerRadius: 3))
+                    .accessibilityLabel("Gluten-free options available")
+            }
+        }
+    }
+}
+
+private extension MealType {
+    var accessibleName: String {
+        glutenFreeAvailability == .available
+            ? "\(rawValue), gluten-free options available" : rawValue
+    }
+}
+
 private enum NameInput {
     static let maximumCharacters = 33
 
@@ -312,7 +338,7 @@ private struct CounterView: View {
                     ActionButton(title: !hasStarted ? "Plan not started"
                                  : needsPlanSelection ? "Choose a Meal Plan"
                                  : availability == .outsideService ? "Add Meal Manually"
-                                 : needsManualEntry ? "Already Used · Add Meal"
+                                 : needsManualEntry ? "\(availability.alreadyRecordedPeriod?.rawValue ?? "Meal") Already Used"
                                  : plan.remainingMeals == 0 ? "All meals used" : "Use 1 meal",
                                  symbol: needsPlanSelection ? "gearshape"
                                      : needsManualEntry ? "square.and.pencil" : "plus",
@@ -455,7 +481,7 @@ private struct RecordView: View {
                     ForEach(displayedRecords) { record in
                         if record.kind == .used {
                             Button { editingRecord = record } label: {
-                                RecordRow(record: record)
+                                RecordRow(record: record, period: plan.effectivePeriod(for: record))
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint("Edit or remove meal")
@@ -497,6 +523,7 @@ private struct RecordView: View {
 
 private struct RecordRow: View {
     let record: MealRecord
+    var period: MealType? = nil
     var startDate: Date? = nil
     var isTermStart = false
     var startTimeZone: TimeZone = .current
@@ -504,7 +531,7 @@ private struct RecordRow: View {
     private var title: String {
         switch record.kind {
         case .started: "Meal plan started"
-        case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d", timeZone: CafeHours.timeZone)) · \(record.mealType?.rawValue ?? "Unassigned")"
+        case .used: "\(Self.format(record.timestamp, as: "EEEE, MMM d", timeZone: CafeHours.timeZone)) · \(period?.accessibleName ?? "Unassigned")"
         case .adjusted: isTermStart ? "\(record.planTerm?.title ?? "Meal plan") term started" : "Plan updated"
         case .imported: "Starting balance"
         case .reset: "Week reset"
@@ -578,8 +605,16 @@ private struct RecordRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title)
+                if record.kind == .used, let period {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(Self.format(record.timestamp, as: "EEEE, MMM d", timeZone: CafeHours.timeZone) + " ·")
+                        MealPeriodLabel(period: period)
+                    }
                     .font(.system(size: 16, weight: .bold))
+                } else {
+                    Text(title)
+                        .font(.system(size: 16, weight: .bold))
+                }
                 if let dateText {
                     Text(dateText)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -616,12 +651,16 @@ private struct RecordRow: View {
 }
 
 private extension MealEntryAvailability {
+    var alreadyRecordedPeriod: MealType? {
+        if case let .alreadyRecorded(period) = self { return period }
+        return nil
+    }
     var explanation: String {
         switch self {
         case .available(let period): "Meal period: \(period.rawValue)."
         case .outsideService: "Choose a time during Steve’s Café service."
         case .alreadyRecorded(let period):
-            "\(period.rawValue) already has a meal recorded for this date. Choose another time or date."
+            "You’ve already recorded \(period.rawValue) for this day. Choose another meal or date."
         }
     }
 
@@ -656,6 +695,9 @@ private struct AddMealSheet: View {
     }
 
     private var timeMessage: (text: String, needsAttention: Bool)? {
+        if CafeHours.suggestedUsageTime(for: mealType, on: mealDate) == nil {
+            return ("\(mealType.rawValue) is not scheduled at Steve’s Café on this day.", true)
+        }
         guard let availability else { return nil }
         if case let .available(period) = availability, period != mealType {
             return ("That time is during \(period.rawValue). Choose a time for \(mealType.rawValue).", true)
@@ -711,11 +753,11 @@ private struct AddMealSheet: View {
                     .padding(.top, 27)
                 Menu {
                     ForEach(MealType.allCases) { type in
-                        Button(type.rawValue) { mealType = type }
+                        Button { mealType = type } label: { MealPeriodLabel(period: type) }
                     }
                 } label: {
                     HStack {
-                        Text(mealType.rawValue)
+                        MealPeriodLabel(period: mealType)
                             .font(.system(size: 16, weight: .semibold))
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down")
@@ -725,7 +767,7 @@ private struct AddMealSheet: View {
                     .frame(height: 55)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
                 }
-                .accessibilityLabel("Meal, \(mealType.rawValue)")
+                .accessibilityLabel("Meal, \(mealType.accessibleName)")
                 .padding(.top, 10)
 
                 Eyebrow("TIME USED · CALARTS TIME")
@@ -828,6 +870,7 @@ private struct EditMealSheet: View {
     let removeMeal: (UUID) -> Bool
 
     @State private var mealDate = Date()
+    @State private var mealType: MealType = .breakfast
     @State private var mealTime = Date()
     @State private var errorMessage = ""
     @State private var showingDatePicker = false
@@ -857,6 +900,17 @@ private struct EditMealSheet: View {
 
     private var availability: MealEntryAvailability? {
         selectedTimestamp.map { plan.mealEntryAvailability(at: $0, excluding: record.id) }
+    }
+
+    private var timeMessage: (text: String, needsAttention: Bool)? {
+        if CafeHours.suggestedUsageTime(for: mealType, on: mealDate) == nil {
+            return ("\(mealType.rawValue) is not scheduled at Steve’s Café on this day.", true)
+        }
+        guard let availability else { return nil }
+        if case let .available(period) = availability, period != mealType {
+            return ("That time is during \(period.rawValue). Choose a time for \(mealType.rawValue).", true)
+        }
+        return (availability.explanation, availability.needsAttention)
     }
 
     var body: some View {
@@ -894,6 +948,28 @@ private struct EditMealSheet: View {
                 .accessibilityLabel("Meal date, \(dateText)")
                 .padding(.top, 10)
 
+                Eyebrow("MEAL")
+                    .foregroundStyle(Palette.cyan)
+                    .padding(.top, 27)
+                Menu {
+                    ForEach(MealType.allCases) { type in
+                        Button { selectMealType(type) } label: { MealPeriodLabel(period: type) }
+                    }
+                } label: {
+                    HStack {
+                        MealPeriodLabel(period: mealType)
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 55)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
+                }
+                .accessibilityLabel("Meal, \(mealType.accessibleName)")
+                .padding(.top, 10)
+
                 Eyebrow("TIME USED · CALARTS TIME")
                     .foregroundStyle(Palette.cyan)
                     .padding(.top, 27)
@@ -906,10 +982,10 @@ private struct EditMealSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.cyan, lineWidth: 2))
                     .padding(.top, 10)
 
-                if let availability {
-                    Text(availability.explanation)
+                if let timeMessage {
+                    Text(timeMessage.text)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(availability.needsAttention ? Palette.lime : Palette.muted)
+                        .foregroundStyle(timeMessage.needsAttention ? Palette.lime : Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 11)
                 }
@@ -941,6 +1017,7 @@ private struct EditMealSheet: View {
         .presentationDetents([.large])
         .onAppear {
             mealDate = CafeHours.pickerDate(for: record.timestamp)
+            mealType = plan.effectivePeriod(for: record)
             mealTime = record.timestamp
         }
         .sheet(isPresented: $showingDatePicker) {
@@ -960,12 +1037,20 @@ private struct EditMealSheet: View {
         }
     }
 
+    private func selectMealType(_ type: MealType) {
+        mealType = type
+        if let suggested = CafeHours.suggestedUsageTime(for: type, on: mealDate) {
+            mealTime = suggested
+        }
+        errorMessage = ""
+    }
+
     private func save() {
         guard let timestamp = selectedTimestamp else {
             errorMessage = "Choose a valid meal date and time."
             return
         }
-        if timestamp == record.timestamp {
+        if timestamp == record.timestamp && mealType == record.mealType {
             dismiss()
             return
         }
@@ -983,7 +1068,11 @@ private struct EditMealSheet: View {
         case .outsideService, .alreadyRecorded:
             errorMessage = availability.explanation
         case .available(let period):
-            if editMeal(record.id, period, timestamp) {
+            guard period == mealType else {
+                errorMessage = "That time is during \(period.rawValue). Choose a time for \(mealType.rawValue)."
+                return
+            }
+            if editMeal(record.id, mealType, timestamp) {
                 dismiss()
             } else {
                 errorMessage = "That week or block has no available meals for this date."
@@ -1141,10 +1230,16 @@ private struct CafeStatusCard: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     Eyebrow("STEVE’S CAFÉ")
-                    Text(status.headline)
+                    if let period = status.mealType {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text("Open now ·")
+                            MealPeriodLabel(period: period, name: status.serviceName)
+                        }
                         .font(.system(size: 17, weight: .heavy))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
+                    } else {
+                        Text(status.headline)
+                            .font(.system(size: 17, weight: .heavy))
+                    }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: status.isOpen ? "checkmark.circle.fill" : "clock.fill")
@@ -1183,7 +1278,7 @@ private struct CafeStatusCard: View {
         }
         .sheet(isPresented: $showingHours) { CafeHoursSheet() }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Steve's Café, \(status.headline), \(status.detail). Based on regular hours; holidays may differ.")
+        .accessibilityLabel("Steve's Café, \(status.headline), \(status.detail)\(status.mealType?.glutenFreeAvailability == .available ? ", gluten-free options available" : ""). Based on regular hours; holidays may differ.")
     }
 }
 
@@ -1268,8 +1363,13 @@ private struct CafeHoursSheet: View {
                 .padding(.bottom, 10)
             ForEach(services, id: \.name) { service in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(service.name)
-                        .font(.system(size: 14, weight: .bold))
+                    if let period = CafeHours.mealType(for: service) {
+                        MealPeriodLabel(period: period, name: service.name)
+                            .font(.system(size: 14, weight: .bold))
+                    } else {
+                        Text(service.name)
+                            .font(.system(size: 14, weight: .bold))
+                    }
                     Spacer(minLength: 8)
                     Text(service.timeRange)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
